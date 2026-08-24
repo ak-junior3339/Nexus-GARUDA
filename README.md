@@ -1,5 +1,5 @@
 # SIH 2026 [Team Nexus]
-### Team Leader : ? 
+### Team Leader : (not yet decided) 
 ### Members : Akshat,Khushvardhan,Harshil,Gourvi,Archil,Aishwarya
 
 
@@ -12,13 +12,13 @@
 ### Problem Statement Title	: AI-Based Intelligent Video Analytics Platform for Border Surveillance using existing CCTV Infrastructure.
 
 ### Description : 
-### • Background Border security forces deploy CCTV cameras at Border Out Posts(BOPs), check posts, border roads, and other strategic locations for surveillance and monitoring. However, conventional CCTV systems primarily provide video recording and live monitoring capabilities,requiring continuous human observation. Advanced surveillance functionalities such as Facial Recognition Systems (FRS), Automatic Number Plate Recognition (ANPR), intrusion detection, and object tracking often require specialized hardware and proprietary solutions,making large-scale deployment costly and difficult, particularly in remote border areas.
-### • Description The proposed solution aims to develop an AI-driven software platform capable of transforming existing CCTV infrastructure into an intelligent surveillance network without requiring dedicated FRS, ANPR, or smart-camera hardware. The platform shall ingest live video streams from standard IP-based CCTV cameras and perform real-time video analytics using Artificial Intelligence and Computer Vision techniques.
+### • Background - Border security forces deploy CCTV cameras at Border Out Posts(BOPs), check posts, border roads, and other strategic locations for surveillance and monitoring. However, conventional CCTV systems primarily provide video recording and live monitoring capabilities,requiring continuous human observation. Advanced surveillance functionalities such as Facial Recognition Systems (FRS), Automatic Number Plate Recognition (ANPR), intrusion detection, and object tracking often require specialized hardware and proprietary solutions,making large-scale deployment costly and difficult, particularly in remote border areas.
+### • Description - The proposed solution aims to develop an AI-driven software platform capable of transforming existing CCTV infrastructure into an intelligent surveillance network without requiring dedicated FRS, ANPR, or smart-camera hardware. The platform shall ingest live video streams from standard IP-based CCTV cameras and perform real-time video analytics using Artificial Intelligence and Computer Vision techniques.
 
 ### The solution should provide capabilities such as:
 
 ### • Human detection and tracking
-###  Vehicle detection and classification
+### • Vehicle detection and classification
 ### • Face detection
 ### • Automatic Number Plate Recognition (ANPR)
 ### • Virtual fence intrusion detection
@@ -36,4 +36,3 @@
 ### • Improve situational awareness and response time for border security forces.
 ### • Support integration with existing command and control systems.
 ### • The final solution should be cost-effective, scalable, and suitable for deployment across remote border locations and strategic installations.
-### • Possible Project Name IBVAP â€“ Intelligent Border Video Analytics Platform
