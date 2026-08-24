@@ -1,6 +1,6 @@
 # SIH 2026 [Team Nexus]
 ### Team Leader : (not yet decided) 
-### Members : Akshat,Khushvardhan,Harshil,Gourvi,Archil,Aishwarya
+### Members : Akshat Jain,Khushvardhan,Harshil,Gourvi,Archil,Aishwarya
 
 
 # Project G.A.R.U.D.A.
