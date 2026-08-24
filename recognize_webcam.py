@@ -24,12 +24,47 @@ Press 'q' to quit the display window.
 import argparse
 import json
 import os
+import shutil
 import time
 from collections import deque
 
 import cv2
 import numpy as np
-from deepface import DeepFace
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REQUIRED_CASCADES = ["haarcascade_frontalface_default.xml", "haarcascade_eye.xml"]
+
+
+def ensure_opencv_cascades():
+    """
+    DeepFace's 'opencv' detector looks for cascade XML files directly inside
+    the installed cv2 package's data/ folder. Some opencv-python wheels
+    (notably some Windows builds) ship without these files. If they're
+    missing, copy them in from the copies bundled next to this script.
+    """
+    cv2_data_dir = os.path.join(os.path.dirname(cv2.__file__), "data")
+    os.makedirs(cv2_data_dir, exist_ok=True)
+
+    for filename in REQUIRED_CASCADES:
+        dest = os.path.join(cv2_data_dir, filename)
+        if os.path.isfile(dest):
+            continue
+
+        source = os.path.join(SCRIPT_DIR, filename)
+        if not os.path.isfile(source):
+            raise RuntimeError(
+                f"Missing required file: {filename}\n"
+                f"Expected it next to this script at: {source}\n"
+                "Download it and place it in the same folder as this script."
+            )
+
+        shutil.copy(source, dest)
+        print(f"[setup] Copied {filename} into {cv2_data_dir}")
+
+
+ensure_opencv_cascades()
+
+from deepface import DeepFace  # noqa: E402  (import after cascade setup)
 
 DETECTOR_BACKEND = "opencv"  # must match the backend used in enroll_faces.py
 
@@ -90,6 +125,10 @@ def main():
     parser.add_argument("--threshold", type=float, default=0.4,
                          help="Cosine similarity threshold to accept a match (0-1, default 0.4). "
                               "Higher = stricter (fewer false matches, may miss real matches).")
+    parser.add_argument("--skip-frames", type=int, default=3,
+                         help="Only run detection+recognition every Nth frame (default 3); "
+                              "boxes are redrawn from the last result on skipped frames. "
+                              "Set to 1 to process every frame. Raise this if FPS is low.")
     parser.add_argument("--headless", action="store_true")
     args = parser.parse_args()
 
@@ -105,6 +144,11 @@ def main():
     fps_tracker = FPSTracker()
     print("Starting recognition. Press 'q' to quit (if a window is shown).")
 
+    frame_idx = 0
+    # Cache of (label, color, score, x, y, w, h) tuples from the last frame
+    # that actually ran detection+recognition; reused on skipped frames.
+    cached_boxes = []
+
     try:
         while True:
             ok, frame = cap.read()
@@ -112,36 +156,45 @@ def main():
                 print("Stream ended or frame not read.")
                 break
 
-            try:
-                results = DeepFace.represent(
-                    frame,
-                    model_name=model_name,
-                    detector_backend=DETECTOR_BACKEND,
-                    enforce_detection=False,
-                )
-            except Exception:
-                results = []
+            frame_idx += 1
+            run_recognition = (frame_idx % max(1, args.skip_frames)) == 1 or args.skip_frames <= 1
 
-            # DeepFace.represent with enforce_detection=False returns one
-            # low-confidence "face" even when nothing is there; filter those out.
-            faces_found = [r for r in results if r.get("face_confidence", 1.0) > 0]
+            if run_recognition:
+                try:
+                    results = DeepFace.represent(
+                        frame,
+                        model_name=model_name,
+                        detector_backend=DETECTOR_BACKEND,
+                        enforce_detection=False,
+                    )
+                except Exception:
+                    results = []
 
-            for r in faces_found:
-                area = r["facial_area"]
-                x, y, w, h = area["x"], area["y"], area["w"], area["h"]
+                # DeepFace.represent with enforce_detection=False returns one
+                # low-confidence "face" even when nothing is there; filter those out.
+                faces_found = [r for r in results if r.get("face_confidence", 1.0) > 0]
 
-                query_emb = np.array(r["embedding"], dtype="float32")
-                sims = cosine_similarity(query_emb, vectors)
-                best_idx = int(np.argmax(sims))
-                score = float(sims[best_idx])
+                cached_boxes = []
+                for r in faces_found:
+                    area = r["facial_area"]
+                    x, y, w, h = area["x"], area["y"], area["w"], area["h"]
 
-                if score >= args.threshold:
-                    label = names[best_idx]
-                    color = (0, 200, 0)  # green for match
-                else:
-                    label = "Unknown"
-                    color = (0, 0, 220)  # red for unknown
+                    query_emb = np.array(r["embedding"], dtype="float32")
+                    sims = cosine_similarity(query_emb, vectors)
+                    best_idx = int(np.argmax(sims))
+                    score = float(sims[best_idx])
 
+                    if score >= args.threshold:
+                        label = names[best_idx]
+                        color = (0, 200, 0)  # green for match
+                    else:
+                        label = "Unknown"
+                        color = (0, 0, 220)  # red for unknown
+
+                    cached_boxes.append((label, color, score, x, y, w, h))
+
+            # Draw the current (possibly cached, from a previous frame) boxes.
+            for (label, color, score, x, y, w, h) in cached_boxes:
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
                 text = f"{label} ({score:.2f})"
                 (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
@@ -154,7 +207,7 @@ def main():
                         (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
             if args.headless:
-                print(f"\rFPS: {fps_tracker.fps():5.1f} | Faces: {len(faces_found)}", end="")
+                print(f"\rFPS: {fps_tracker.fps():5.1f} | Faces: {len(cached_boxes)}", end="")
             else:
                 cv2.imshow("Face Recognition", frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
