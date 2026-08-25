@@ -1,38 +1,16 @@
-# SIH 2026 [Team Nexus]
-### Team Leader : (not yet decided) 
-### Members : Akshat Jain,Khushvardhan,Harshil,Gourvi,Archil,Aishwarya
+# (Garuda) - Watchtower Cam 
 
+This branch (`feature/Watchtower-cam`) contains the local video analytics engine optimized for high-angle, long-distance (50–200m) border surveillance. It processes live or pre-recorded feeds to detect, track, and classify threats using a custom-trained YOLO model (VisDrone + COCO Animals).
 
-# Project G.A.R.U.D.A.
-# Guided AI for Real-time Unified Detection & Alerting
+## 🚀 Features in this Branch
 
-##  Problem Statement
-### Problem Statement ID: 26187
+* **Unified 3-Class Detection:** Specifically trained to detect Persons (Critical), Vehicles (Warning), and Animals (Suppressed False Alarms) from a steep watchtower perspective.
+* **Dynamic Threat Geofencing:** Utilizes `shapely` to draw a virtual perimeter. Objects are tracked using ByteTrack, and a "PERSON" is only reclassified as an "INTRUDER" once they physically cross the defined boundary.
+* **Software Night-Vision (CLAHE):** Real-time contrast enhancement in the LAB color space to pull human silhouettes out of pitch-black CCTV feeds without distorting the video stream.
 
-### Problem Statement Title	: AI-Based Intelligent Video Analytics Platform for Border Surveillance using existing CCTV Infrastructure.
+## 🛠️ Setup & Installation
 
-### Description : 
-### • Background - Border security forces deploy CCTV cameras at Border Out Posts(BOPs), check posts, border roads, and other strategic locations for surveillance and monitoring. However, conventional CCTV systems primarily provide video recording and live monitoring capabilities,requiring continuous human observation. Advanced surveillance functionalities such as Facial Recognition Systems (FRS), Automatic Number Plate Recognition (ANPR), intrusion detection, and object tracking often require specialized hardware and proprietary solutions,making large-scale deployment costly and difficult, particularly in remote border areas.
-### • Description - The proposed solution aims to develop an AI-driven software platform capable of transforming existing CCTV infrastructure into an intelligent surveillance network without requiring dedicated FRS, ANPR, or smart-camera hardware. The platform shall ingest live video streams from standard IP-based CCTV cameras and perform real-time video analytics using Artificial Intelligence and Computer Vision techniques.
-
-### The solution should provide capabilities such as:
-
-### • Human detection and tracking
-### • Vehicle detection and classification
-### • Face detection
-### • Automatic Number Plate Recognition (ANPR)
-### • Virtual fence intrusion detection
-### • Suspicious activity detection
-### • Night-time movement detection
-### • Real-time alert generation and event logging
-### • Expected Solution The proposed system should leverage Artificial Intelligence, Machine Learning, Computer Vision, and Video Analytics to create a software-defined surveillance platform capable of extracting actionable intelligence from existing CCTV infrastructure.
-
-### The solution should:
-
-### • Eliminate dependence on expensive dedicated surveillance hardware.
-### • Enable intelligent monitoring through AI-powered video analytics.
-### • Provide real-time alerts for security incidents and border intrusions.
-### • Support facial recognition, vehicle identification, and behavioral analytics through software.
-### • Improve situational awareness and response time for border security forces.
-### • Support integration with existing command and control systems.
-### • The final solution should be cost-effective, scalable, and suitable for deployment across remote border locations and strategic installations.
+**1. Install Dependencies**
+Ensure your local Python environment has the necessary computer vision and geometry libraries installed:
+```bash
+pip install ultralytics opencv-python numpy shapely
