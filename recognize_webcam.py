@@ -1,7 +1,7 @@
 """
 Real-time Face Recognition (Webcam Matching)
 =============================================
-Matches faces seen on the webcam against the database built by enroll_faces.py.
+Matches faces seen on the webcam against the database built by enroll_photos.py.
 
 Pipeline per frame:
     1. DeepFace detects + aligns faces in the frame (same detector/alignment
@@ -11,7 +11,7 @@ Pipeline per frame:
        person's embeddings; best match above the threshold wins.
 
 Usage:
-    python enroll_faces.py --input known_faces --output embeddings.json   # once
+    python enroll_photos.py --input enroll_photos --output embeddings.json   # once
     python recognize_webcam.py --db embeddings.json                       # then this
 
     python recognize_webcam.py --source 1              # different webcam
@@ -66,14 +66,14 @@ ensure_opencv_cascades()
 
 from deepface import DeepFace  # noqa: E402  (import after cascade setup)
 
-DETECTOR_BACKEND = "opencv"  # must match the backend used in enroll_faces.py
+DETECTOR_BACKEND = "opencv"  # must match the backend used in enroll_photos.py
 
 
 def load_database(db_path: str):
     if not os.path.isfile(db_path):
         raise RuntimeError(
             f"Embeddings database not found: {db_path}\n"
-            "Run enroll_faces.py first to create it."
+            "Run enroll_photos.py first to create it."
         )
     with open(db_path) as f:
         data = json.load(f)
