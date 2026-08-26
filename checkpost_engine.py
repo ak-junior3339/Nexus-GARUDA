@@ -15,6 +15,9 @@ from ultralytics import YOLO
 from collections import defaultdict
 import os 
 from datetime import datetime
+import time
+import pygame
+
 
 # ==============================================================================
 #  CONFIGURATING THE SYSTEM FIRST
@@ -40,6 +43,16 @@ if not os.path.exists(ALL_OBJECTS_TXT_LOG):
     with open(ALL_OBJECTS_TXT_LOG, "w") as f:
         f.write("Timestamp, Object_Type, Track_ID, Confidence\n") # Header row
 
+ALARM_PATH = os.path.join("Alert", "alarm.wav")
+pygame.mixer.init()
+try:
+    ALARM_SOUND = pygame.mixer.Sound(ALARM_PATH)
+except:
+    print(" Warning: '{ALARM_PATH}' not found! Audio alarm will be muted.")
+    ALARM_SOUND = None
+
+LAST_ALARM_TIME = 0           
+ALARM_COOLDOWN = 3.0         
 # ==============================================================================
 # NIGT TIME CAMERA ENHANCEMENT FOR BETTER SUPERVISION USING CLAHE
 # ==============================================================================
@@ -124,7 +137,7 @@ class VirtualTripwireEngine:
 # MAIN VIDEO ANALYTICS LOOP
 # ==============================================================================
 def run_surveillance_pipeline():
-    global NIGHT_MODE_ENABLED,AUTO_NIGHT_MODE
+    global NIGHT_MODE_ENABLED,AUTO_NIGHT_MODE,LAST_ALARM_TIME
     print("🚀 Loading YOLO11s Surveillance Model...")
     try:
         model = YOLO(MODEL_PATH)
@@ -190,6 +203,12 @@ def run_surveillance_pipeline():
                         box_color = (0, 0, 255) # Red Box
                         label = f"ID:{track_id} INTRUDER ({conf:.2f})"
                         tripwire_engine.trigger_alert(f"CRITICAL: Human ID #{track_id} breached!", color=(0, 0, 255))
+
+                        current_time = time.time()
+                        if (current_time - LAST_ALARM_TIME) > ALARM_COOLDOWN:
+                            if ALARM_SOUND:
+                                ALARM_SOUND.play() 
+                            LAST_ALARM_TIME = current_time
 
                         if track_id not in tripwire_engine.logged_intruders:
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
