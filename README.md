@@ -62,7 +62,7 @@ Garuda utilizes specialized AI models tailored for different surveillance sector
 
 ---
 
-# 🛡️ Checkpost Camera — Intelligent Perimeter Surveillance System
+# 🛡️ Watchtower Camera — Intelligent Perimeter Surveillance System
  
 An AI-powered checkpost/border surveillance solution built for **high-angle, real-world deployment**. It combines object detection, tracking, virtual perimeter logic, and low-light enhancement into a single autonomous monitoring pipeline — with clean evidentiary logging and real-time tactical alerts.
  
@@ -71,7 +71,7 @@ An AI-powered checkpost/border surveillance solution built for **high-angle, rea
 ## ✨ Key Features
  
 ### 🎯 Detection & Tracking
-- **High-Angle Macro Object Detection & Tracking** — Optimized for elevated/checkpost camera mounts, tracking small and distant objects reliably across frames.
+- **High-Angle Macro Object Detection & Tracking** — Optimized for elevated/eatchtower camera mounts, tracking small and distant objects reliably across frames.
 - **Multi-Class Classification** — Distinguishes between **Persons**, **Vehicles**, and **Animals**, with built-in wildlife filtering to suppress false alarms from non-threat fauna.
 ### 🚧 Perimeter Intelligence
 - **Virtual Tripwire & Geofence Logic** — Define custom intrusion lines and zones; triggers alerts the moment a tracked object crosses a boundary.
