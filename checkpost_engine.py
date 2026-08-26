@@ -1,10 +1,6 @@
 """
 ==============================================================================
 GARUDA: LIVE SURVEILLANCE & THREAT DETECTION ENGINE
-Pillars Implemented in this engine:
-  1. High-Angle Macro Detection (Person, Vehicle, Animal) + ByteTrack
-  2. Virtual Tripwire Perimeter Intrusion Logic
-  3. Real-Time Night-Vision / IR Contrast Enhancement (CLAHE)
 ==============================================================================
 """
 
@@ -24,7 +20,7 @@ import math
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
 MODEL_PATH = "best.pt" 
-VIDEO_SOURCE = "test-input/15396218_1920_1080_25fps.mp4"                            # add the video source
+VIDEO_SOURCE = "test-input/15396218_1920_1080_25fps.mp4"                            
 NIGHT_MODE_ENABLED = False        
 AUTO_NIGHT_MODE = True
 
@@ -137,26 +133,31 @@ class VirtualTripwireEngine:
         current_time = time.time()
         cx, cy = current_center_pt
         
-        # 1. First time seeing them? Drop an 'anchor' where they stand.
+        # if it see's the object first time we will just anchor it 
         if track_id not in self.anchor_points:
             self.anchor_points[track_id] = (current_time, cx, cy)
             return False, 0.0
         
+        # or else we just take start_time and points from anchor points
         start_time, anchor_x, anchor_y = self.anchor_points[track_id]
         duration = current_time - start_time
         
-        # 2. If they haven't been on screen long enough, return normal.
+        # if the duration of them being less than time limit then do nothing
         if duration < self.LOITER_TIME_LIMIT:
             return False, duration
             
-        # 3. The person hit the time limit! Let's check how far they traveled from the anchor.
+        # if the object is in the frame for greater than time limit then calculate distance 
+        # cx - anchor_x: Measures the horizontal distance between the two points.cy - anchor_y: 
+        # Measures the vertical distance between the two points.math.hypot(): 
+        # Computes the Euclidean distance (the length of the hypotenuse of a right triangle) 
+        # using the Pythagorean theorem (underRoot(a**2 + b**2))
         distance_moved = math.hypot(cx - anchor_x, cy - anchor_y)
         
         if distance_moved < self.LOITER_RADIUS:
-            # They are pacing or standing still!
+            # object is  pacing or standing still!
             return True, duration
         else:
-            # They walked a long distance. They are just passing by.
+            # object walked a long distance. They are just passing by.
             # Reset their anchor to their current spot so we can check if they stop walking later.
             self.anchor_points[track_id] = (current_time, cx, cy)
             return False, 0.0
