@@ -17,6 +17,7 @@ import os
 from datetime import datetime
 import time
 import pygame
+import math
 
 
 # ==============================================================================
@@ -31,12 +32,13 @@ AUTO_NIGHT_MODE = True
 LOG_DIR = "breach_logs"
 PERSON_LOG_DIR = os.path.join(LOG_DIR, "person")
 CAR_LOG_DIR = os.path.join(LOG_DIR, "car")
+LOITER_LOG_DIR = os.path.join(LOG_DIR, "loitering")
 
 
 os.makedirs(LOG_DIR, exist_ok=True)   
 os.makedirs(PERSON_LOG_DIR, exist_ok=True)
 os.makedirs(CAR_LOG_DIR, exist_ok=True)
-
+os.makedirs(LOITER_LOG_DIR, exist_ok=True)
 
 ALL_OBJECTS_TXT_LOG = os.path.join(LOG_DIR, "all_objects_detected.txt")
 if not os.path.exists(ALL_OBJECTS_TXT_LOG):
@@ -48,7 +50,7 @@ pygame.mixer.init()
 try:
     ALARM_SOUND = pygame.mixer.Sound(ALARM_PATH)
 except:
-    print(" Warning: '{ALARM_PATH}' not found! Audio alarm will be muted.")
+    print(f"Warning: '{ALARM_PATH}' not found! Audio alarm will be muted.")
     ALARM_SOUND = None
 
 LAST_ALARM_TIME = 0           
@@ -98,7 +100,11 @@ class VirtualTripwireEngine:
         self.frame_index = 0
         self.logged_intruders = set()
         self.logged_vehicles = set()
+        self.logged_loiterers = set()
 
+        self.anchor_points = {}          
+        self.LOITER_TIME_LIMIT = 20.0    
+        self.LOITER_RADIUS = 150
     def check_breach(self, track_id, current_center_pt):
         # YOLO tracker assigns a unique track_id to every object 
         # (e.g., Person #4, Car #12), the system uses a dictionary to remember where 
@@ -125,6 +131,35 @@ class VirtualTripwireEngine:
             if movement_vector.intersects(self.tripwire_line):
                 return True
         return False
+
+    def check_loitering(self, track_id, current_center_pt):
+        """Checks if a person is standing still or pacing in a small area."""
+        current_time = time.time()
+        cx, cy = current_center_pt
+        
+        # 1. First time seeing them? Drop an 'anchor' where they stand.
+        if track_id not in self.anchor_points:
+            self.anchor_points[track_id] = (current_time, cx, cy)
+            return False, 0.0
+        
+        start_time, anchor_x, anchor_y = self.anchor_points[track_id]
+        duration = current_time - start_time
+        
+        # 2. If they haven't been on screen long enough, return normal.
+        if duration < self.LOITER_TIME_LIMIT:
+            return False, duration
+            
+        # 3. The person hit the time limit! Let's check how far they traveled from the anchor.
+        distance_moved = math.hypot(cx - anchor_x, cy - anchor_y)
+        
+        if distance_moved < self.LOITER_RADIUS:
+            # They are pacing or standing still!
+            return True, duration
+        else:
+            # They walked a long distance. They are just passing by.
+            # Reset their anchor to their current spot so we can check if they stop walking later.
+            self.anchor_points[track_id] = (current_time, cx, cy)
+            return False, 0.0
 
     def trigger_alert(self, text, color=(0, 0, 255), display_duration_frames=60):
         self.active_alerts.append({
@@ -198,6 +233,7 @@ def run_surveillance_pipeline():
                 has_breached = tripwire_engine.check_breach(track_id, center_pt)
 
                 if cls_id == 0:
+                    is_loitering, duration = tripwire_engine.check_loitering(track_id, center_pt)
                     if has_breached:
                         # What happens AFTER they cross the line
                         box_color = (0, 0, 255) # Red Box
@@ -222,6 +258,25 @@ def run_surveillance_pipeline():
                             cv2.imwrite(filename, evidence_frame)
                             print(f"📸 [PERSON LOGGED]: {filename}")
                             tripwire_engine.logged_intruders.add(track_id)
+                    
+                    elif is_loitering:
+                        box_color = (0, 165, 255) # Orange
+                        label = f"ID:{track_id} SUSPICIOUS ({duration:.0f}s)"
+                        
+                        if track_id not in tripwire_engine.logged_loiterers:
+                            tripwire_engine.trigger_alert(f"SUSPICIOUS: ID #{track_id} is stationary/pacing near border!", color=(0, 165, 255))
+                            
+                            img_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"{LOITER_LOG_DIR}/loiterer_{track_id}_{img_timestamp}.jpg"
+                            
+                            evidence_frame = clean_snapshot.copy()
+                            cv2.rectangle(evidence_frame, (x1, y1), (x2, y2), box_color, 2)
+                            cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
+                            cv2.imwrite(filename, evidence_frame)
+                            print(f"[SUSPICIOUS BEHAVIOR]: {filename}")
+                            
+                            tripwire_engine.logged_loiterers.add(track_id)
+
                     else:
                         box_color = (255, 255, 0) # Cyan/Yellow Box (Watching)
                         label = f"ID:{track_id} PERSON ({conf:.2f})"
@@ -248,7 +303,7 @@ def run_surveillance_pipeline():
                             cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 2)
                             
                             cv2.imwrite(filename, evidence_frame)
-                            print(f"📸 [CAR LOGGED]: {filename}")
+                            print(f"[CAR LOGGED]: {filename}")
                             tripwire_engine.logged_vehicles.add(track_id)
                     else:
                         box_color = (255, 150, 0)
@@ -267,7 +322,7 @@ def run_surveillance_pipeline():
                     cv2.line(processed_frame, trail[i - 1], trail[i], box_color, 1)
 
         cv2.rectangle(processed_frame, (0, 0), (w, 38), (20, 20, 20), -1)
-        mode_text = "NIGHT VISION: ACTIVE" if NIGHT_MODE_ENABLED else "DAYLIGHT: ACTIVE"
+        mode_text = f"NIGHT VISION: {'AUTO (ON)' if NIGHT_MODE_ENABLED and AUTO_NIGHT_MODE else 'ON' if NIGHT_MODE_ENABLED else 'OFF'}"
         cv2.putText(processed_frame, f"GARUDA | {mode_text}", (15, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
         cv2.putText(processed_frame, "[N] Toggle Night  |  [Q] Quit", (w - 260, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
 
