@@ -63,17 +63,17 @@ Garuda utilizes specialized AI models tailored for different surveillance sector
 ---
 
 ### Checkpost Camera Features : - 
-#### High-Angle Macro Object Detection & Tracking
-#### Multi-Class Classification (Persons, Vehicles, Animals with wildlife filtering)
-#### Virtual Tripwire & Geofence Perimeter Intrusion Logic
-#### Smart Stationary & Pacing Loitering Analysis
-#### Autonomous Night-Vision & CLAHE Enhancement (LAB Color Space)
-#### Universal Text Logging (all_objects_detected.txt)
-#### Multi-Category Evidence Snapshot Logging (person/, car/, loitering/)
-#### Clean Anti-Spam Evidentiary Capture (Without HUD/Tripwire overlays)
-#### Asynchronous Multi-Modal Audio Alarms (pygame integration with cooldown governor)
-#### Tactical HUD & Real-Time Alert Ticker
-#### Keyboard Override Controls ([n] for Night Mode, [q] to Exit)
+#### *High-Angle Macro Object Detection & Tracking
+#### *Multi-Class Classification (Persons, Vehicles, Animals with wildlife filtering)
+#### *Virtual Tripwire & Geofence Perimeter Intrusion Logic
+#### *Smart Stationary & Pacing Loitering Analysis
+#### *Autonomous Night-Vision & CLAHE Enhancement (LAB Color Space)
+#### *Universal Text Logging (all_objects_detected.txt)
+#### *Multi-Category Evidence Snapshot Logging (person/, car/, loitering/)
+#### *Clean Anti-Spam Evidentiary Capture (Without HUD/Tripwire overlays)
+#### *Asynchronous Multi-Modal Audio Alarms (pygame integration with cooldown governor)
+#### *Tactical HUD & Real-Time Alert Ticker
+#### *Keyboard Override Controls ([n] for Night Mode, [q] to Exit)
 
 ## 👥 Team Nexus
 
@@ -97,5 +97,6 @@ This repository follows a strict feature-branch workflow to maintain code integr
 * `main` : Production-ready stable code.
 * `Feature` : Active development branch for Full-Stack dashboard integration.
 * `Archil_facenet` : Dedicated branch for training and testing the Facial Recognition pipeline.
+* `feature/watchtower-Cam` : Dedicated branch for training and testing the watchtower camera Model and Engine (Completed)
 
 ---
