@@ -13,14 +13,46 @@ import numpy as np
 from shapely.geometry import LineString, Point
 from ultralytics import YOLO
 from collections import defaultdict
+import os 
+from datetime import datetime
+import time
+import pygame
+
 
 # ==============================================================================
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
 MODEL_PATH = "best.pt" 
-VIDEO_SOURCE = "test-input/15396218_1920_1080_25fps.mp4"                             # add the video source
-NIGHT_MODE_ENABLED = False                  # currently night mode is off
+VIDEO_SOURCE = "test-input/15396218_1920_1080_25fps.mp4"                            # add the video source
+NIGHT_MODE_ENABLED = False        
+AUTO_NIGHT_MODE = True
 
+
+LOG_DIR = "breach_logs"
+PERSON_LOG_DIR = os.path.join(LOG_DIR, "person")
+CAR_LOG_DIR = os.path.join(LOG_DIR, "car")
+
+
+os.makedirs(LOG_DIR, exist_ok=True)   
+os.makedirs(PERSON_LOG_DIR, exist_ok=True)
+os.makedirs(CAR_LOG_DIR, exist_ok=True)
+
+
+ALL_OBJECTS_TXT_LOG = os.path.join(LOG_DIR, "all_objects_detected.txt")
+if not os.path.exists(ALL_OBJECTS_TXT_LOG):
+    with open(ALL_OBJECTS_TXT_LOG, "w") as f:
+        f.write("Timestamp, Object_Type, Track_ID, Confidence\n") # Header row
+
+ALARM_PATH = os.path.join("Alert", "alarm.wav")
+pygame.mixer.init()
+try:
+    ALARM_SOUND = pygame.mixer.Sound(ALARM_PATH)
+except:
+    print(" Warning: '{ALARM_PATH}' not found! Audio alarm will be muted.")
+    ALARM_SOUND = None
+
+LAST_ALARM_TIME = 0           
+ALARM_COOLDOWN = 3.0         
 # ==============================================================================
 # NIGT TIME CAMERA ENHANCEMENT FOR BETTER SUPERVISION USING CLAHE
 # ==============================================================================
@@ -64,6 +96,8 @@ class VirtualTripwireEngine:
         self.trajectory_history = defaultdict(list) # MEMORY TO REMEBER WHERE THE OBJECTS HAVE BEEN
         self.active_alerts = []
         self.frame_index = 0
+        self.logged_intruders = set()
+        self.logged_vehicles = set()
 
     def check_breach(self, track_id, current_center_pt):
         # YOLO tracker assigns a unique track_id to every object 
@@ -103,7 +137,7 @@ class VirtualTripwireEngine:
 # MAIN VIDEO ANALYTICS LOOP
 # ==============================================================================
 def run_surveillance_pipeline():
-    global NIGHT_MODE_ENABLED
+    global NIGHT_MODE_ENABLED,AUTO_NIGHT_MODE,LAST_ALARM_TIME
     print("🚀 Loading YOLO11s Surveillance Model...")
     try:
         model = YOLO(MODEL_PATH)
@@ -113,16 +147,22 @@ def run_surveillance_pipeline():
 
     cap = cv2.VideoCapture(VIDEO_SOURCE)
     tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350, 1080)) # 15396218_1920_1080_25fps.mp4
-    # tripwire_engine = VirtualTripwireEngine(pt_start=(0,1080), pt_end=(3840, 1080))# 15105513_3840_2160_30fps
-
+    #tripwire_engine = VirtualTripwireEngine(pt_start=(0,1080), pt_end=(3840, 1080))# 15105513_3840_2160_30fps
+    seen_all_objects = set()
     while cap.isOpened():
         ret, raw_frame = cap.read()
         if not ret: break
 
         tripwire_engine.frame_index += 1
         h, w, _ = raw_frame.shape
-        processed_frame = apply_night_vision_enhancement(raw_frame) if NIGHT_MODE_ENABLED else raw_frame.copy()
 
+        if AUTO_NIGHT_MODE:
+            # Calculate average brightness of the frame (0 is black, 255 is white)
+            avg_brightness = np.mean(cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY))
+            NIGHT_MODE_ENABLED = avg_brightness < 60  # Turn on if scene is dark
+
+        processed_frame = apply_night_vision_enhancement(raw_frame) if NIGHT_MODE_ENABLED else raw_frame.copy()
+        clean_snapshot = processed_frame.copy()
         results = model.track(source=processed_frame, persist=True, tracker="bytetrack.yaml", conf=0.30, verbose=False)[0]
 
         p1 = tripwire_engine.tripwire_line.coords[0]
@@ -142,6 +182,19 @@ def run_surveillance_pipeline():
                 center_y = (y1 + y2) // 2
                 center_pt = (center_x, center_y)
 
+                if track_id not in seen_all_objects:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Map the numerical cls_id (0, 1, 2) to a readable word
+                    class_names = {0: "Person", 1: "Vehicle", 2: "Animal"}
+                    obj_type = class_names.get(cls_id, "Unknown")
+                    
+                    with open(ALL_OBJECTS_TXT_LOG, "a") as f:
+                        f.write(f"{timestamp}, {obj_type}, ID:{track_id}, Conf:{conf:.2f}\n")
+                        
+                    seen_all_objects.add(track_id)
+                    print(f"LOGGED: {obj_type} #{track_id} detected on camera.")
+
                 has_breached = tripwire_engine.check_breach(track_id, center_pt)
 
                 if cls_id == 0:
@@ -149,14 +202,57 @@ def run_surveillance_pipeline():
                         # What happens AFTER they cross the line
                         box_color = (0, 0, 255) # Red Box
                         label = f"ID:{track_id} INTRUDER ({conf:.2f})"
-                        tripwire_engine.trigger_alert(f"🚨 CRITICAL: Human ID #{track_id} breached!", color=(0, 0, 255))
+                        tripwire_engine.trigger_alert(f"CRITICAL: Human ID #{track_id} breached!", color=(0, 0, 255))
+
+                        current_time = time.time()
+                        if (current_time - LAST_ALARM_TIME) > ALARM_COOLDOWN:
+                            if ALARM_SOUND:
+                                ALARM_SOUND.play() 
+                            LAST_ALARM_TIME = current_time
+
+                        if track_id not in tripwire_engine.logged_intruders:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"{PERSON_LOG_DIR}/intruder_{track_id}_{timestamp}.jpg"
+                            
+                            # Draw detection box on clean snapshot (without red tripwire)
+                            evidence_frame = clean_snapshot.copy()
+                            cv2.rectangle(evidence_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                            cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                            
+                            cv2.imwrite(filename, evidence_frame)
+                            print(f"📸 [PERSON LOGGED]: {filename}")
+                            tripwire_engine.logged_intruders.add(track_id)
                     else:
                         box_color = (255, 255, 0) # Cyan/Yellow Box (Watching)
                         label = f"ID:{track_id} PERSON ({conf:.2f})"
                 elif cls_id == 1:
-                    box_color = (255, 150, 0)
-                    label = f"ID:{track_id} VEHICLE ({conf:.2f})"
-                    if has_breached: tripwire_engine.trigger_alert(f"⚠️ VEHICLE: ID #{track_id} crossed boundary.", color=(255, 150, 0))
+                    if has_breached:
+                        box_color = (0, 140, 255)
+                        label = f"ID:{track_id} VEHICLE BREACH ({conf:.2f})"
+                        tripwire_engine.trigger_alert(f"⚠️ VEHICLE: ID #{track_id} crossed boundary line.", color=(0, 140, 255))
+                        
+                        current_time = time.time()
+                        if (current_time - LAST_ALARM_TIME) > ALARM_COOLDOWN:
+                            if ALARM_SOUND:
+                                ALARM_SOUND.play() 
+                            LAST_ALARM_TIME = current_time
+
+                        # Save Vehicle Evidence
+                        if track_id not in tripwire_engine.logged_vehicles:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"{CAR_LOG_DIR}/vehicle_{track_id}_{timestamp}.jpg"
+                            
+                            # Draw detection box on clean snapshot (without red tripwire)
+                            evidence_frame = clean_snapshot.copy()
+                            cv2.rectangle(evidence_frame, (x1, y1), (x2, y2), (0, 140, 255), 2)
+                            cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 2)
+                            
+                            cv2.imwrite(filename, evidence_frame)
+                            print(f"📸 [CAR LOGGED]: {filename}")
+                            tripwire_engine.logged_vehicles.add(track_id)
+                    else:
+                        box_color = (255, 150, 0)
+                        label = f"ID:{track_id} VEHICLE ({conf:.2f})"
                 else:
                     box_color = (0, 255, 0)
                     label = f"ID:{track_id} ANIMAL (FILTERED)"
@@ -184,7 +280,9 @@ def run_surveillance_pipeline():
         cv2.imshow("BorderGuard AI", processed_frame)
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'): break
-        elif key == ord('n'): NIGHT_MODE_ENABLED = not NIGHT_MODE_ENABLED
+        elif key == ord('n'): 
+            AUTO_NIGHT_MODE = False
+            NIGHT_MODE_ENABLED = not NIGHT_MODE_ENABLED
 
     cap.release()
     cv2.destroyAllWindows()
