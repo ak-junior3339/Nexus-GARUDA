@@ -24,13 +24,21 @@ VIDEO_SOURCE = "test-input/15396218_1920_1080_25fps.mp4"                        
 NIGHT_MODE_ENABLED = False        
 AUTO_NIGHT_MODE = True
 
+
 LOG_DIR = "breach_logs"
 PERSON_LOG_DIR = os.path.join(LOG_DIR, "person")
 CAR_LOG_DIR = os.path.join(LOG_DIR, "car")
 
 
+os.makedirs(LOG_DIR, exist_ok=True)   
 os.makedirs(PERSON_LOG_DIR, exist_ok=True)
 os.makedirs(CAR_LOG_DIR, exist_ok=True)
+
+
+ALL_OBJECTS_TXT_LOG = os.path.join(LOG_DIR, "all_objects_detected.txt")
+if not os.path.exists(ALL_OBJECTS_TXT_LOG):
+    with open(ALL_OBJECTS_TXT_LOG, "w") as f:
+        f.write("Timestamp, Object_Type, Track_ID, Confidence\n") # Header row
 
 # ==============================================================================
 # NIGT TIME CAMERA ENHANCEMENT FOR BETTER SUPERVISION USING CLAHE
@@ -127,7 +135,7 @@ def run_surveillance_pipeline():
     cap = cv2.VideoCapture(VIDEO_SOURCE)
     tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350, 1080)) # 15396218_1920_1080_25fps.mp4
     #tripwire_engine = VirtualTripwireEngine(pt_start=(0,1080), pt_end=(3840, 1080))# 15105513_3840_2160_30fps
-
+    seen_all_objects = set()
     while cap.isOpened():
         ret, raw_frame = cap.read()
         if not ret: break
@@ -161,6 +169,19 @@ def run_surveillance_pipeline():
                 center_y = (y1 + y2) // 2
                 center_pt = (center_x, center_y)
 
+                if track_id not in seen_all_objects:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Map the numerical cls_id (0, 1, 2) to a readable word
+                    class_names = {0: "Person", 1: "Vehicle", 2: "Animal"}
+                    obj_type = class_names.get(cls_id, "Unknown")
+                    
+                    with open(ALL_OBJECTS_TXT_LOG, "a") as f:
+                        f.write(f"{timestamp}, {obj_type}, ID:{track_id}, Conf:{conf:.2f}\n")
+                        
+                    seen_all_objects.add(track_id)
+                    print(f"LOGGED: {obj_type} #{track_id} detected on camera.")
+
                 has_breached = tripwire_engine.check_breach(track_id, center_pt)
 
                 if cls_id == 0:
@@ -168,7 +189,7 @@ def run_surveillance_pipeline():
                         # What happens AFTER they cross the line
                         box_color = (0, 0, 255) # Red Box
                         label = f"ID:{track_id} INTRUDER ({conf:.2f})"
-                        tripwire_engine.trigger_alert(f"🚨 CRITICAL: Human ID #{track_id} breached!", color=(0, 0, 255))
+                        tripwire_engine.trigger_alert(f"CRITICAL: Human ID #{track_id} breached!", color=(0, 0, 255))
 
                         if track_id not in tripwire_engine.logged_intruders:
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
