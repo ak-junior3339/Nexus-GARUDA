@@ -18,7 +18,7 @@ from collections import defaultdict
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
 MODEL_PATH = "best.pt" 
-VIDEO_SOURCE = "test-input/15396218_1920_1080_25fps.mp4"                             # add the video source
+VIDEO_SOURCE = "test-input/15105513_3840_2160_30fps.mp4"                            # add the video source
 NIGHT_MODE_ENABLED = False                  # currently night mode is off
 
 # ==============================================================================
@@ -112,8 +112,8 @@ def run_surveillance_pipeline():
         print("Couldn't find or load the model")
 
     cap = cv2.VideoCapture(VIDEO_SOURCE)
-    tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350, 1080)) # 15396218_1920_1080_25fps.mp4
-    # tripwire_engine = VirtualTripwireEngine(pt_start=(0,1080), pt_end=(3840, 1080))# 15105513_3840_2160_30fps
+    #tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350, 1080)) # 15396218_1920_1080_25fps.mp4
+    tripwire_engine = VirtualTripwireEngine(pt_start=(0,1080), pt_end=(3840, 1080))# 15105513_3840_2160_30fps
 
     while cap.isOpened():
         ret, raw_frame = cap.read()
