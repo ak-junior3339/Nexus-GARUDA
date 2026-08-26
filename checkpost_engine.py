@@ -231,6 +231,12 @@ def run_surveillance_pipeline():
                         label = f"ID:{track_id} VEHICLE BREACH ({conf:.2f})"
                         tripwire_engine.trigger_alert(f"⚠️ VEHICLE: ID #{track_id} crossed boundary line.", color=(0, 140, 255))
                         
+                        current_time = time.time()
+                        if (current_time - LAST_ALARM_TIME) > ALARM_COOLDOWN:
+                            if ALARM_SOUND:
+                                ALARM_SOUND.play() 
+                            LAST_ALARM_TIME = current_time
+
                         # Save Vehicle Evidence
                         if track_id not in tripwire_engine.logged_vehicles:
                             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
