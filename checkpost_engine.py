@@ -19,7 +19,7 @@ import math
 # ==============================================================================
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
-MODEL_PATH = "best.pt" 
+MODEL_PATH = "WTbest.pt" 
 VIDEO_SOURCE = "test-input/15396218_1920_1080_25fps.mp4"                            
 NIGHT_MODE_ENABLED = False        
 AUTO_NIGHT_MODE = True
