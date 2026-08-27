@@ -42,8 +42,7 @@ Garuda utilizes specialized AI models tailored for different surveillance sector
 
 ## 💻 System Workflow & Features
 
-### 🌟 Top Features
-* **Auto Night Vision Switch:** Automatically detects low-light environments and toggles the camera feed to high-contrast night vision mode using (CLAHE).
+
 
 ### 🛡️ User Dashboard (Command Center)
 * **Authentication:** Secure user login (Accounts can *only* be provisioned by an Admin).
