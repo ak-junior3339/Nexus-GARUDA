@@ -7,7 +7,7 @@ from ultralytics import YOLO
 
 
 # ---------------------------------------------------------------------------
-# 1. INITIALIZATION
+# 1. INITIALIZATION of custom trained models
 # ---------------------------------------------------------------------------
 # Load the custom-trained YOLOv8 plate-detection model.
 print("Loading YOLOv8 custom weights and EasyOCR engine...")
