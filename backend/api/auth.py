@@ -4,6 +4,8 @@ from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timedelta
 
+from .db.db_operations import get_user_from_db
+
 from .captcha import verify_captcha
 
 
@@ -69,7 +71,7 @@ def login(data: LoginRequest):
     # 2. Fetch user from database
     # ------------------------------------------
 
-    # user = get_user_from_db(data.username)  --> from db/db_operations.py
+    user = get_user_from_db(data.username)  #--> from db/db_operations.py
 
     if user is None:
         raise HTTPException(status_code=401,detail="Invalid username or password")
