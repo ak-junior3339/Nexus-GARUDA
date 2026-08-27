@@ -135,3 +135,7 @@ This repository follows a strict feature-branch workflow to maintain code integr
 * `feature/watchtower-Cam` : Dedicated branch for training and testing the watchtower camera Model and Engine (Completed)
 
 ---
+
+# todo (AK): 
+-> correct the .csv logs 
+-> update readme for anpr(completed) and login frontend (if completed)
