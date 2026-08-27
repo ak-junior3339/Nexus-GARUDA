@@ -137,7 +137,7 @@ data/
 datasets/
 
 # Model files
-*.pt
+
 *.pth
 *.onnx
 *.h5
