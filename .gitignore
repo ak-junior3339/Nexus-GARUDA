@@ -53,6 +53,7 @@ htmlcov/
 # Environment / Secrets
 # ==============================
 
+.venv/
 .env
 .env.*
 !.env.example
