@@ -4,7 +4,7 @@ from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timedelta
 
-from .db.db_operations import get_user_from_db
+from ..db.db_operations import get_user_from_db
 
 from .captcha import verify_captcha
 
