@@ -1,0 +1,167 @@
+# ==============================
+# Operating System
+# ==============================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ==============================
+# IDE / Editors
+# ==============================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+
+# ==============================
+# Python
+# ==============================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+
+# ==============================
+# Environment / Secrets
+# ==============================
+
+.env
+.env.*
+!.env.example
+
+# Secrets / credentials
+*.pem
+*.key
+*.crt
+
+
+# ==============================
+# Node / JavaScript
+# ==============================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.npm/
+.yarn/
+.pnpm-debug.log*
+
+# Build output
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+
+
+# ==============================
+# Java
+# ==============================
+
+*.class
+*.jar
+
+target/
+
+
+# Maven
+.mvn/
+
+
+# ==============================
+# C / C++
+# ==============================
+
+*.o
+*.obj
+*.exe
+*.out
+*.a
+*.so
+*.dll
+
+
+# ==============================
+# Logs
+# ==============================
+
+*.log
+logs/
+
+
+# ==============================
+# Databases
+# ==============================
+
+*.db
+*.sqlite
+*.sqlite3
+
+# ==============================
+# ML / Data Science
+# ==============================
+
+# Large datasets
+data/
+datasets/
+
+# Model files
+*.pt
+*.pth
+*.onnx
+*.h5
+*.hdf5
+*.pkl
+*.joblib
+
+# Generated outputs
+
+runs/
+wandb/
+
+
+# ==============================
+# Temporary Files
+# ==============================
+
+*.tmp
+*.temp
+*.bak
+*.cache
+
+# OS generated files
+.DS_Store
+
+
+test-input/
