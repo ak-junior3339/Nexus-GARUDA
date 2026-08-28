@@ -49,9 +49,7 @@ networkx==3.6.1
 ninja==1.13.0
 numpy==2.3.5
 nvidia-ml-py==13.610.43
-opencv-contrib-python==4.10.0.84
-opencv-python==5.0.0.93
-opencv-python-headless==5.0.0.93
+opencv-contrib-python==5.0.0.93
 opt-einsum==3.3.0
 packaging==26.3
 paddleocr==3.7.0
