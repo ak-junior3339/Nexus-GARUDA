@@ -5,6 +5,7 @@ GARUDA: LIVE SURVEILLANCE & THREAT DETECTION ENGINE
 """
 
 import cv2
+import csv
 import numpy as np
 from shapely.geometry import LineString, Point
 from ultralytics import YOLO
@@ -20,26 +21,54 @@ import math
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
 MODEL_PATH = "Checkpost surveillance/WTbest.pt" 
-VIDEO_SOURCE = "Checkpost surveillance/test-input/15396176_1920_1080_25fps.mp4"                            
+VIDEO_SOURCE = "Checkpost surveillance/test-input/15396218_1920_1080_25fps.mp4"                            
 NIGHT_MODE_ENABLED = False        
 AUTO_NIGHT_MODE = True
 
 
-LOG_DIR = "Checkpost surveillance/breach_logs"
-PERSON_LOG_DIR = os.path.join(LOG_DIR, "person")
-CAR_LOG_DIR = os.path.join(LOG_DIR, "car")
-LOITER_LOG_DIR = os.path.join(LOG_DIR, "loitering")
+LOG_DIR = "Checkpost surveillance/Logs"
+BREACH_LOG_DIR = "Checkpost surveillance/breach_logs"
+PERSON_LOG_DIR = os.path.join(BREACH_LOG_DIR, "person")
+CAR_LOG_DIR = os.path.join(BREACH_LOG_DIR, "car")
+LOITER_LOG_DIR = os.path.join(BREACH_LOG_DIR, "loitering")
 
 
-os.makedirs(LOG_DIR, exist_ok=True)   
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(BREACH_LOG_DIR, exist_ok=True)
 os.makedirs(PERSON_LOG_DIR, exist_ok=True)
 os.makedirs(CAR_LOG_DIR, exist_ok=True)
 os.makedirs(LOITER_LOG_DIR, exist_ok=True)
 
-ALL_OBJECTS_TXT_LOG = os.path.join(LOG_DIR, "all_objects_detected.txt")
-if not os.path.exists(ALL_OBJECTS_TXT_LOG):
-    with open(ALL_OBJECTS_TXT_LOG, "w") as f:
-        f.write("Timestamp, Object_Type, Track_ID, Confidence\n") # Header row
+ALL_OBJECTS_CSV_LOG = os.path.join(LOG_DIR, "surveillance_log.csv")
+if not os.path.exists(ALL_OBJECTS_CSV_LOG):
+    with open(ALL_OBJECTS_CSV_LOG, "w", newline="") as f:
+        csv_writer = csv.writer(f)
+        # One unified log for every event type: first-time detections,
+        # person breaches, vehicle breaches, and loitering/suspicious
+        # behavior. "evidence_file" links to the saved snapshot .jpg
+        # for events that have one (breaches/loitering), and is left
+        # blank for plain "Detected" rows since no snapshot is taken
+        # for those.
+        csv_writer.writerow([
+            "timestamp", "event_type", "object_type",
+            "track_id", "confidence", "details", "evidence_file"
+        ])
+
+
+def log_event(event_type, object_type, track_id, confidence, details="", evidence_file=""):
+    """
+    Appends a single row to the unified surveillance CSV log.
+    Opened and closed per call (rather than kept open for the whole
+    video) so that partially-written rows are never lost if the script
+    is interrupted or crashes mid-run.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(ALL_OBJECTS_CSV_LOG, "a", newline="") as f:
+        csv_writer = csv.writer(f)
+        csv_writer.writerow([
+            timestamp, event_type, object_type,
+            track_id, f"{confidence:.2f}", details, evidence_file
+        ])
 
 ALARM_PATH = os.path.join("Checkpost surveillance/Alert", "alarm.wav")
 pygame.mixer.init()
@@ -181,8 +210,8 @@ def run_surveillance_pipeline():
         print("Couldn't find or load the model")
 
     cap = cv2.VideoCapture(VIDEO_SOURCE)
-    tripwire_engine = VirtualTripwireEngine(pt_start=(0,650), pt_end=(1920, 650)) # 15396218_1920_1080_25fps.mp4
-    #tripwire_engine = VirtualTripwireEngine(pt_start=(0,1080), pt_end=(3840, 1080))# 15105513_3840_2160_30fps
+    tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350,1080))
+    #tripwire_engine = VirtualTripwireEngine(pt_start=(0,650), pt_end=(1920, 650)) VIDEO_SOURCE = "Checkpost surveillance/test-input/15396176_1920_1080_25fps.mp4" 
     seen_all_objects = set()
     while cap.isOpened():
         ret, raw_frame = cap.read()
@@ -218,15 +247,12 @@ def run_surveillance_pipeline():
                 center_pt = (center_x, center_y)
 
                 if track_id not in seen_all_objects:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    
                     # Map the numerical cls_id (0, 1, 2) to a readable word
                     class_names = {0: "Person", 1: "Vehicle", 2: "Animal"}
                     obj_type = class_names.get(cls_id, "Unknown")
-                    
-                    with open(ALL_OBJECTS_TXT_LOG, "a") as f:
-                        f.write(f"{timestamp}, {obj_type}, ID:{track_id}, Conf:{conf:.2f}\n")
-                        
+
+                    log_event("Detected", obj_type, track_id, conf)
+
                     seen_all_objects.add(track_id)
                     print(f"LOGGED: {obj_type} #{track_id} detected on camera.")
 
@@ -256,6 +282,9 @@ def run_surveillance_pipeline():
                             cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                             
                             cv2.imwrite(filename, evidence_frame)
+                            log_event("Person Breach", "Person", track_id, conf,
+                                      details="Crossed restricted perimeter fence",
+                                      evidence_file=filename)
                             print(f"📸 [PERSON LOGGED]: {filename}")
                             tripwire_engine.logged_intruders.add(track_id)
                     
@@ -273,6 +302,9 @@ def run_surveillance_pipeline():
                             cv2.rectangle(evidence_frame, (x1, y1), (x2, y2), box_color, 2)
                             cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
                             cv2.imwrite(filename, evidence_frame)
+                            log_event("Suspicious/Loitering", "Person", track_id, conf,
+                                      details=f"Stationary/pacing for {duration:.0f}s",
+                                      evidence_file=filename)
                             print(f"[SUSPICIOUS BEHAVIOR]: {filename}")
                             
                             tripwire_engine.logged_loiterers.add(track_id)
@@ -303,6 +335,9 @@ def run_surveillance_pipeline():
                             cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 2)
                             
                             cv2.imwrite(filename, evidence_frame)
+                            log_event("Vehicle Breach", "Vehicle", track_id, conf,
+                                      details="Crossed restricted boundary line",
+                                      evidence_file=filename)
                             print(f"[CAR LOGGED]: {filename}")
                             tripwire_engine.logged_vehicles.add(track_id)
                     else:
