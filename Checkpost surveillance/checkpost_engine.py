@@ -19,13 +19,13 @@ import math
 # ==============================================================================
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
-MODEL_PATH = "WTbest.pt" 
-VIDEO_SOURCE = "test-input/15396218_1920_1080_25fps.mp4"                            
+MODEL_PATH = "Checkpost surveillance/WTbest.pt" 
+VIDEO_SOURCE = "Checkpost surveillance/test-input/15396218_1920_1080_25fps.mp4"                            
 NIGHT_MODE_ENABLED = False        
 AUTO_NIGHT_MODE = True
 
 
-LOG_DIR = "breach_logs"
+LOG_DIR = "Checkpost surveillance/breach_logs"
 PERSON_LOG_DIR = os.path.join(LOG_DIR, "person")
 CAR_LOG_DIR = os.path.join(LOG_DIR, "car")
 LOITER_LOG_DIR = os.path.join(LOG_DIR, "loitering")
@@ -41,7 +41,7 @@ if not os.path.exists(ALL_OBJECTS_TXT_LOG):
     with open(ALL_OBJECTS_TXT_LOG, "w") as f:
         f.write("Timestamp, Object_Type, Track_ID, Confidence\n") # Header row
 
-ALARM_PATH = os.path.join("Alert", "alarm.wav")
+ALARM_PATH = os.path.join("Checkpost surveillance/Alert", "alarm.wav")
 pygame.mixer.init()
 try:
     ALARM_SOUND = pygame.mixer.Sound(ALARM_PATH)
