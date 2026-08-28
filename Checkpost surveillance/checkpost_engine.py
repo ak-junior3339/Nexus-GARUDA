@@ -5,6 +5,7 @@ GARUDA: LIVE SURVEILLANCE & THREAT DETECTION ENGINE
 """
 
 import cv2
+import csv
 import numpy as np
 from shapely.geometry import LineString, Point
 from ultralytics import YOLO
@@ -25,21 +26,49 @@ NIGHT_MODE_ENABLED = False
 AUTO_NIGHT_MODE = True
 
 
-LOG_DIR = "Checkpost surveillance/breach_logs"
-PERSON_LOG_DIR = os.path.join(LOG_DIR, "person")
-CAR_LOG_DIR = os.path.join(LOG_DIR, "car")
-LOITER_LOG_DIR = os.path.join(LOG_DIR, "loitering")
+LOG_DIR = "Checkpost surveillance/Logs"
+BREACH_LOG_DIR = "Checkpost surveillance/breach_logs"
+PERSON_LOG_DIR = os.path.join(BREACH_LOG_DIR, "person")
+CAR_LOG_DIR = os.path.join(BREACH_LOG_DIR, "car")
+LOITER_LOG_DIR = os.path.join(BREACH_LOG_DIR, "loitering")
 
 
-os.makedirs(LOG_DIR, exist_ok=True)   
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(BREACH_LOG_DIR, exist_ok=True)
 os.makedirs(PERSON_LOG_DIR, exist_ok=True)
 os.makedirs(CAR_LOG_DIR, exist_ok=True)
 os.makedirs(LOITER_LOG_DIR, exist_ok=True)
 
-ALL_OBJECTS_TXT_LOG = os.path.join(LOG_DIR, "all_objects_detected.txt")
-if not os.path.exists(ALL_OBJECTS_TXT_LOG):
-    with open(ALL_OBJECTS_TXT_LOG, "w") as f:
-        f.write("Timestamp, Object_Type, Track_ID, Confidence\n") # Header row
+ALL_OBJECTS_CSV_LOG = os.path.join(LOG_DIR, "surveillance_log.csv")
+if not os.path.exists(ALL_OBJECTS_CSV_LOG):
+    with open(ALL_OBJECTS_CSV_LOG, "w", newline="") as f:
+        csv_writer = csv.writer(f)
+        # One unified log for every event type: first-time detections,
+        # person breaches, vehicle breaches, and loitering/suspicious
+        # behavior. "evidence_file" links to the saved snapshot .jpg
+        # for events that have one (breaches/loitering), and is left
+        # blank for plain "Detected" rows since no snapshot is taken
+        # for those.
+        csv_writer.writerow([
+            "timestamp", "event_type", "object_type",
+            "track_id", "confidence", "details", "evidence_file"
+        ])
+
+
+def log_event(event_type, object_type, track_id, confidence, details="", evidence_file=""):
+    """
+    Appends a single row to the unified surveillance CSV log.
+    Opened and closed per call (rather than kept open for the whole
+    video) so that partially-written rows are never lost if the script
+    is interrupted or crashes mid-run.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(ALL_OBJECTS_CSV_LOG, "a", newline="") as f:
+        csv_writer = csv.writer(f)
+        csv_writer.writerow([
+            timestamp, event_type, object_type,
+            track_id, f"{confidence:.2f}", details, evidence_file
+        ])
 
 ALARM_PATH = os.path.join("Checkpost surveillance/Alert", "alarm.wav")
 pygame.mixer.init()
@@ -85,6 +114,99 @@ def apply_night_vision_enhancement(frame):
     enhanced_lab = cv2.merge((enhanced_l, a_channel, b_channel))
     return cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
 
+
+def calibrate_tripwire(video_source):
+    """Opens the first frame of the video and lets the admin draw a tripwire via mouse clicks with on-screen instructions."""
+    cap = cv2.VideoCapture(video_source)
+    ret, frame = cap.read()
+    if not ret:
+        print("⚠️ Error: Could not read video source for calibration.")
+        return (60, 320), (580, 320) # Fallback defaults
+
+    pts = []
+
+    def mouse_callback(event, x, y, flags, param):
+        nonlocal pts
+        if event == cv2.EVENT_LBUTTONDOWN:
+            if len(pts) < 2:
+                pts.append((x, y))
+                print(f"📍 Point {len(pts)} registered at: ({x}, {y})")
+
+    window_name = "Tripwire Calibration Mode"
+    cv2.namedWindow(window_name)
+    cv2.setMouseCallback(window_name, mouse_callback)
+
+    print("\n--- TRIPWIRE CALIBRATION MODE ---")
+    print("1. Click the START point of the fence on the video window.")
+    print("2. Click the END point of the fence.")
+    print("3. Press 'ENTER' to confirm, 'R' to reset points, or 'Q' to quit.\n")
+
+    while True:
+        display_frame = frame.copy()
+        h, w, _ = display_frame.shape
+
+        # ---> ON-SCREEN INSTRUCTION PANEL <---
+        # Draw a semi-transparent or solid dark header banner for readability
+        cv2.rectangle(display_frame, (0, 0), (w, 75), (25, 25, 25), -1)
+        
+        # Dynamic instructions based on current clicking state
+        if len(pts) == 0:
+            instruction_text = "ACTION REQUIRED: Click START point of restricted fence"
+            status_color = (0, 255, 255) # Yellow
+        elif len(pts) == 1:
+            instruction_text = "ACTION REQUIRED: Click END point of restricted fence"
+            status_color = (0, 255, 255) # Yellow
+        else:
+            instruction_text = "READY: Press [ENTER] to confirm or [R] to reset"
+            status_color = (0, 255, 0) # Green
+
+        cv2.putText(display_frame, "GARUDA ADMIN CALIBRATION", (20, 25), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(display_frame, instruction_text, (20, 55), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, status_color, 2)
+        # ----------------------------------------
+
+        # Draw points and line dynamically as they click
+        if len(pts) == 1:
+            cv2.circle(display_frame, pts[0], 6, (0, 0, 255), -1)
+            cv2.putText(display_frame, "Start Point", (pts[0][0] + 10, pts[0][1]), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        elif len(pts) == 2:
+            cv2.circle(display_frame, pts[0], 6, (0, 0, 255), -1)
+            cv2.circle(display_frame, pts[1], 6, (0, 0, 255), -1)
+            cv2.line(display_frame, pts[0], pts[1], (0, 0, 255), 2)
+            cv2.putText(display_frame, "Restricted Fence", (pts[1][0] + 10, pts[1][1]), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+        cv2.imshow(window_name, display_frame)
+        
+        key = cv2.waitKey(1) & 0xFF
+        
+        # Check if window was manually closed with the 'X' button
+        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            print("⚠️ Calibration window closed. Using default tripwire coordinates.")
+            cap.release()
+            cv2.destroyAllWindows()
+            return (350, 0), (350, 1080)
+
+        if key in [13, 10]: # Enter key
+            if len(pts) == 2:
+                break
+            else:
+                print("⚠️ Please select both a start and end point first!")
+        elif key in [ord('r'), ord('R')]:
+            pts = []
+            print("🔄 Reset points. Click again.")
+        elif key in [ord('q'), ord('Q')]:
+            print("⚠️ Calibration aborted. Using default tripwire coordinates.")
+            cap.release()
+            cv2.destroyAllWindows()
+            return (350, 0), (350, 1080)
+
+    cap.release()
+    cv2.destroyWindow(window_name)
+    return pts[0], pts[1]
+    
 # ==============================================================================
 #  VIRTUAL TRIPWIRE & GEOFENCING CLASS
 # ==============================================================================
@@ -180,9 +302,16 @@ def run_surveillance_pipeline():
         # model = YOLO("yolo11s.pt")
         print("Couldn't find or load the model")
 
+
+    print("Launching interactive calibration window...")
+    pt_start, pt_end = calibrate_tripwire(VIDEO_SOURCE)
+    print(f"Tripwire set successfully from {pt_start} to {pt_end}\n")
+
     cap = cv2.VideoCapture(VIDEO_SOURCE)
-    tripwire_engine = VirtualTripwireEngine(pt_start=(0,650), pt_end=(1920, 650)) # 15396218_1920_1080_25fps.mp4
-    #tripwire_engine = VirtualTripwireEngine(pt_start=(0,1080), pt_end=(3840, 1080))# 15105513_3840_2160_30fps
+    tripwire_engine = VirtualTripwireEngine(pt_start=pt_start, pt_end=pt_end)
+    # cap = cv2.VideoCapture(VIDEO_SOURCE)
+    # tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350,1080))
+    #tripwire_engine = VirtualTripwireEngine(pt_start=(0,650), pt_end=(1920, 650)) VIDEO_SOURCE = "Checkpost surveillance/test-input/15396176_1920_1080_25fps.mp4" 
     seen_all_objects = set()
     while cap.isOpened():
         ret, raw_frame = cap.read()
@@ -218,15 +347,12 @@ def run_surveillance_pipeline():
                 center_pt = (center_x, center_y)
 
                 if track_id not in seen_all_objects:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    
                     # Map the numerical cls_id (0, 1, 2) to a readable word
                     class_names = {0: "Person", 1: "Vehicle", 2: "Animal"}
                     obj_type = class_names.get(cls_id, "Unknown")
-                    
-                    with open(ALL_OBJECTS_TXT_LOG, "a") as f:
-                        f.write(f"{timestamp}, {obj_type}, ID:{track_id}, Conf:{conf:.2f}\n")
-                        
+
+                    log_event("Detected", obj_type, track_id, conf)
+
                     seen_all_objects.add(track_id)
                     print(f"LOGGED: {obj_type} #{track_id} detected on camera.")
 
@@ -256,6 +382,9 @@ def run_surveillance_pipeline():
                             cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                             
                             cv2.imwrite(filename, evidence_frame)
+                            log_event("Person Breach", "Person", track_id, conf,
+                                      details="Crossed restricted perimeter fence",
+                                      evidence_file=filename)
                             print(f"📸 [PERSON LOGGED]: {filename}")
                             tripwire_engine.logged_intruders.add(track_id)
                     
@@ -273,6 +402,9 @@ def run_surveillance_pipeline():
                             cv2.rectangle(evidence_frame, (x1, y1), (x2, y2), box_color, 2)
                             cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
                             cv2.imwrite(filename, evidence_frame)
+                            log_event("Suspicious/Loitering", "Person", track_id, conf,
+                                      details=f"Stationary/pacing for {duration:.0f}s",
+                                      evidence_file=filename)
                             print(f"[SUSPICIOUS BEHAVIOR]: {filename}")
                             
                             tripwire_engine.logged_loiterers.add(track_id)
@@ -303,6 +435,9 @@ def run_surveillance_pipeline():
                             cv2.putText(evidence_frame, label, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 2)
                             
                             cv2.imwrite(filename, evidence_frame)
+                            log_event("Vehicle Breach", "Vehicle", track_id, conf,
+                                      details="Crossed restricted boundary line",
+                                      evidence_file=filename)
                             print(f"[CAR LOGGED]: {filename}")
                             tripwire_engine.logged_vehicles.add(track_id)
                     else:
