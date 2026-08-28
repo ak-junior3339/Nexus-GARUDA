@@ -20,7 +20,7 @@ import math
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
 MODEL_PATH = "Checkpost surveillance/WTbest.pt" 
-VIDEO_SOURCE = "Checkpost surveillance/test-input/15396218_1920_1080_25fps.mp4"                            
+VIDEO_SOURCE = "Checkpost surveillance/test-input/15396176_1920_1080_25fps.mp4"                            
 NIGHT_MODE_ENABLED = False        
 AUTO_NIGHT_MODE = True
 
@@ -89,7 +89,7 @@ def apply_night_vision_enhancement(frame):
 #  VIRTUAL TRIPWIRE & GEOFENCING CLASS
 # ==============================================================================
 class VirtualTripwireEngine:
-    def __init__(self, pt_start=(60, 320), pt_end=(580, 320)):
+    def __init__(self, pt_start=(0,1040), pt_end=(1920,1040)):
         self.tripwire_line = LineString([pt_start, pt_end]) # INTIALIZING A MATHEMATICAL LINE
         self.trajectory_history = defaultdict(list) # MEMORY TO REMEBER WHERE THE OBJECTS HAVE BEEN
         self.active_alerts = []
@@ -97,7 +97,6 @@ class VirtualTripwireEngine:
         self.logged_intruders = set()
         self.logged_vehicles = set()
         self.logged_loiterers = set()
-
         self.anchor_points = {}          
         self.LOITER_TIME_LIMIT = 20.0    
         self.LOITER_RADIUS = 150
@@ -182,7 +181,7 @@ def run_surveillance_pipeline():
         print("Couldn't find or load the model")
 
     cap = cv2.VideoCapture(VIDEO_SOURCE)
-    tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350, 1080)) # 15396218_1920_1080_25fps.mp4
+    tripwire_engine = VirtualTripwireEngine(pt_start=(0,650), pt_end=(1920, 650)) # 15396218_1920_1080_25fps.mp4
     #tripwire_engine = VirtualTripwireEngine(pt_start=(0,1080), pt_end=(3840, 1080))# 15105513_3840_2160_30fps
     seen_all_objects = set()
     while cap.isOpened():
