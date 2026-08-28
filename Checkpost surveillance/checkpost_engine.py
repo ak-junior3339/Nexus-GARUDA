@@ -21,7 +21,7 @@ import math
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
 MODEL_PATH = "Checkpost surveillance/WTbest.pt" 
-VIDEO_SOURCE = "Checkpost surveillance/test-input/15396218_1920_1080_25fps.mp4"                            
+VIDEO_SOURCE = "Checkpost surveillance/test-input/15396176_1920_1080_25fps.mp4"                            
 NIGHT_MODE_ENABLED = False        
 AUTO_NIGHT_MODE = True
 
@@ -114,6 +114,99 @@ def apply_night_vision_enhancement(frame):
     enhanced_lab = cv2.merge((enhanced_l, a_channel, b_channel))
     return cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
 
+
+def calibrate_tripwire(video_source):
+    """Opens the first frame of the video and lets the admin draw a tripwire via mouse clicks with on-screen instructions."""
+    cap = cv2.VideoCapture(video_source)
+    ret, frame = cap.read()
+    if not ret:
+        print("⚠️ Error: Could not read video source for calibration.")
+        return (60, 320), (580, 320) # Fallback defaults
+
+    pts = []
+
+    def mouse_callback(event, x, y, flags, param):
+        nonlocal pts
+        if event == cv2.EVENT_LBUTTONDOWN:
+            if len(pts) < 2:
+                pts.append((x, y))
+                print(f"📍 Point {len(pts)} registered at: ({x}, {y})")
+
+    window_name = "Tripwire Calibration Mode"
+    cv2.namedWindow(window_name)
+    cv2.setMouseCallback(window_name, mouse_callback)
+
+    print("\n--- TRIPWIRE CALIBRATION MODE ---")
+    print("1. Click the START point of the fence on the video window.")
+    print("2. Click the END point of the fence.")
+    print("3. Press 'ENTER' to confirm, 'R' to reset points, or 'Q' to quit.\n")
+
+    while True:
+        display_frame = frame.copy()
+        h, w, _ = display_frame.shape
+
+        # ---> ON-SCREEN INSTRUCTION PANEL <---
+        # Draw a semi-transparent or solid dark header banner for readability
+        cv2.rectangle(display_frame, (0, 0), (w, 75), (25, 25, 25), -1)
+        
+        # Dynamic instructions based on current clicking state
+        if len(pts) == 0:
+            instruction_text = "ACTION REQUIRED: Click START point of restricted fence"
+            status_color = (0, 255, 255) # Yellow
+        elif len(pts) == 1:
+            instruction_text = "ACTION REQUIRED: Click END point of restricted fence"
+            status_color = (0, 255, 255) # Yellow
+        else:
+            instruction_text = "READY: Press [ENTER] to confirm or [R] to reset"
+            status_color = (0, 255, 0) # Green
+
+        cv2.putText(display_frame, "GARUDA ADMIN CALIBRATION", (20, 25), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(display_frame, instruction_text, (20, 55), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, status_color, 2)
+        # ----------------------------------------
+
+        # Draw points and line dynamically as they click
+        if len(pts) == 1:
+            cv2.circle(display_frame, pts[0], 6, (0, 0, 255), -1)
+            cv2.putText(display_frame, "Start Point", (pts[0][0] + 10, pts[0][1]), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        elif len(pts) == 2:
+            cv2.circle(display_frame, pts[0], 6, (0, 0, 255), -1)
+            cv2.circle(display_frame, pts[1], 6, (0, 0, 255), -1)
+            cv2.line(display_frame, pts[0], pts[1], (0, 0, 255), 2)
+            cv2.putText(display_frame, "Restricted Fence", (pts[1][0] + 10, pts[1][1]), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+        cv2.imshow(window_name, display_frame)
+        
+        key = cv2.waitKey(1) & 0xFF
+        
+        # Check if window was manually closed with the 'X' button
+        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            print("⚠️ Calibration window closed. Using default tripwire coordinates.")
+            cap.release()
+            cv2.destroyAllWindows()
+            return (350, 0), (350, 1080)
+
+        if key in [13, 10]: # Enter key
+            if len(pts) == 2:
+                break
+            else:
+                print("⚠️ Please select both a start and end point first!")
+        elif key in [ord('r'), ord('R')]:
+            pts = []
+            print("🔄 Reset points. Click again.")
+        elif key in [ord('q'), ord('Q')]:
+            print("⚠️ Calibration aborted. Using default tripwire coordinates.")
+            cap.release()
+            cv2.destroyAllWindows()
+            return (350, 0), (350, 1080)
+
+    cap.release()
+    cv2.destroyWindow(window_name)
+    return pts[0], pts[1]
+    
 # ==============================================================================
 #  VIRTUAL TRIPWIRE & GEOFENCING CLASS
 # ==============================================================================
@@ -209,8 +302,15 @@ def run_surveillance_pipeline():
         # model = YOLO("yolo11s.pt")
         print("Couldn't find or load the model")
 
+
+    print("Launching interactive calibration window...")
+    pt_start, pt_end = calibrate_tripwire(VIDEO_SOURCE)
+    print(f"Tripwire set successfully from {pt_start} to {pt_end}\n")
+
     cap = cv2.VideoCapture(VIDEO_SOURCE)
-    tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350,1080))
+    tripwire_engine = VirtualTripwireEngine(pt_start=pt_start, pt_end=pt_end)
+    # cap = cv2.VideoCapture(VIDEO_SOURCE)
+    # tripwire_engine = VirtualTripwireEngine(pt_start=(350,0), pt_end=(350,1080))
     #tripwire_engine = VirtualTripwireEngine(pt_start=(0,650), pt_end=(1920, 650)) VIDEO_SOURCE = "Checkpost surveillance/test-input/15396176_1920_1080_25fps.mp4" 
     seen_all_objects = set()
     while cap.isOpened():
