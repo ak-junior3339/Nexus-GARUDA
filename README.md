@@ -3,9 +3,9 @@
 
 ![Smart India Hackathon](https://img.shields.io/badge/Smart_India_Hackathon-2026-blue?style=for-the-badge)
 ![Problem Statement](https://img.shields.io/badge/PS_ID-26187-red?style=for-the-badge)
-![Status](https://img.shields.io/badge/Status-In_Development-green?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Active_Development-green?style=for-the-badge)
 
-Garuda is an AI-driven software platform designed to transform existing, conventional CCTV infrastructure into a cutting-edge intelligent surveillance network. Built for border security forces, it eliminates the need for expensive, proprietary smart-camera hardware by running advanced Computer Vision and Deep Learning models directly on standard IP-based live video streams.
+Garuda is an AI-driven software platform designed to transform existing, conventional CCTV infrastructure into a cutting-edge intelligent surveillance network. Built for border security forces, it eliminates the need for expensive, proprietary smart-camera hardware by running advanced Computer Vision, Deep Learning, and OCR models directly on standard IP-based live video streams and security feeds.
 
 ---
 
@@ -16,126 +16,104 @@ Garuda is an AI-driven software platform designed to transform existing, convent
 **Our Solution:** A software-defined surveillance platform that ingests live video streams from standard CCTV cameras and performs real-time video analytics to extract actionable intelligence, providing a highly cost-effective, scalable, and automated monitoring grid.
 
 ### Key Capabilities
-* [x] Human detection and tracking
-* [x] Vehicle detection and classification
-* [x] Face detection and Facial Recognition (FRS)
-* [x] Automatic Number Plate Recognition (ANPR)
-* [x] Virtual fence intrusion detection
-* [x] Suspicious activity & night-time movement detection
-* [x] Real-time alert generation and event logging
+* [x] Human detection, tracking, and spatial behavior analysis (Loitering/Pacing)
+* [x] Vehicle detection, classification, and boundary breach alerting
+* [x] Face detection and Facial Recognition (FRS) against secure watchlists
+* [x] Automatic Number Plate Recognition (ANPR) with OCR noise suppression and CSV logging
+* [x] Virtual fence intrusion detection with interactive coordinate calibration
+* [x] Autonomous low-light enhancement (CLAHE in LAB color space) for night operations
+* [x] Real-time multi-modal audio alarms and incident event logging
 
 ---
 
-## 🧠 AI & Computer Vision Models
+## 🧠 AI & Computer Vision Architecture
 
-Garuda utilizes specialized AI models tailored for different surveillance sectors:
+Garuda utilizes specialized AI pipelines and neural network modules tailored for different border surveillance sectors:
 
-| Sector / Module | Capabilities |
+| Sector / Module | Core Technologies & Capabilities |
 | :--- | :--- |
-| **Watchtower** | Person Detection, Vehicle Detection. |
-| **Checkpost** | Person Detection, Vehicle Detection, Facial Recognition. |
-| **ANPR Engine** | Optical Character Recognition for Vehicle Number Plate Detection. |
-| **Facial Recognition** | High-accuracy face recognition against a registered watchlist. |
-| **Virtual Tripwire** | Interactive spatial boundary detection with real-time logging. |
+| **Watchtower (Perimeter)** | YOLO11 / YOLOv8 object tracking, multi-class classification (Person/Vehicle/Animal with wildlife filtering), virtual tripwire breach detection, and loitering analysis. |
+| **Checkpost (ANPR Engine)** | Custom YOLOv8 plate detector (`anprbest.pt`), EasyOCR text extraction, GPU acceleration, plate crop upscaling, and robust regex normalization (`clean_plate`). |
+| **Super-Resolution (Upscaling)** | EDSR ($4	imes$) Deep Super-Resolution network for enhancing low-resolution security/surveillance captures and license plates. |
+| **Facial Recognition (FRS)** | High-accuracy face detection and embedding verification against registered threat databases (`Archil_facenet`). |
+| **Adaptive Night Vision** | Automated scene brightness evaluation and CLAHE (Contrast Limited Adaptive Histogram Equalization) in LAB color space for dark-environment clarity. |
 
 ---
 
-## 💻 System Workflow & Features
+## 💻 System Workflow & Dashboard Ecosystem
 
-
-
-### 🛡️ User Dashboard (Command Center)
-* **Authentication:** Secure user login (Accounts can *only* be provisioned by an Admin).
-* **Top Navigation (Mainbar):** Garuda Logo, Camera Grid View Toggles, Camera Vision Options (Original, Night Vision, Heat/Infrared), and Active User Profile with Logout.
-* **Main Viewport (Left Sidebar/Center):** Actual live camera feeds displaying real-time AI bounding boxes/detections, overlaid with Timestamp and Camera Location.
-* **Threat Intelligence (Right Sidebar):** Real-time incident feed showing unresolved incident count, threat name, time, location, AI confidence score, and a "Dismiss" action button.
-* **Deep Analytics (Bottom Bar):** 
-  * **Audit Log:** Table displaying Time, Camera ID, Entity Type, Identifier, Confidence, and Action Taken.
-  * **Threat Graphs:** 24-Hour Threat Frequency line chart (Alerts per hour).
+### 🛡️ User Dashboard (Tactical Command Center)
+* **Authentication:** Secure user login with role-based provisioning (accounts provisioned exclusively by Super Admin).
+* **Top Navigation Bar:** Garuda Logo, Camera Grid View Toggles, Camera Vision Options (Original, Night Vision, Thermal/Infrared), and Active User Profile with Logout.
+* **Main Viewport:** Real-time live camera streams displaying bounding boxes, classification tags, timestamps, and camera geo-locations.
+* **Threat Intelligence Feed:** Live incident ticker showing unresolved breach counts, threat category, timestamp, location, AI confidence score, and quick dismissal controls.
+* **Deep Analytics:** 
+  * **Audit Log Table:** Comprehensive event records tracking Timestamp, Camera ID, Entity Type, Identifier, Confidence, and Action Taken.
+  * **Threat Graphs:** 24-Hour Threat Frequency visualization and alert distribution metrics.
 
 ### ⚙️ Admin Dashboard (Superuser Console)
-* **User Management:** Create, provision, and delete operator accounts.
-* **Session Control:** Force log out any active user system-wide.
-* **Audit Trail:** View comprehensive system and user activity logs.
-* **Console Access:** Secure redirect bridging the Admin Console to the standard User Tactical Dashboard.
+* **User Management:** Provision, configure, and de-provision operator accounts.
+* **Session Control:** Force terminate active sessions system-wide.
+* **Audit Trail:** Deep dive into system events, user actions, and security logs.
+* **Console Access:** Secure single-click bridge connecting the Admin Console to the Tactical User Dashboard.
 
 ---
 
-# 🛡️ Watchtower Camera — Intelligent Perimeter Surveillance System
- 
-An AI-powered checkpost/border surveillance solution built for **high-angle, real-world deployment**. It combines object detection, tracking, virtual perimeter logic, and low-light enhancement into a single autonomous monitoring pipeline — with clean evidentiary logging and real-time tactical alerts.
- 
----
- 
-## ✨ Key Features
- 
-### 🎯 Detection & Tracking
-- **High-Angle Macro Object Detection & Tracking** — Optimized for elevated/eatchtower camera mounts, tracking small and distant objects reliably across frames.
-- **Multi-Class Classification** — Distinguishes between **Persons**, **Vehicles**, and **Animals**, with built-in wildlife filtering to suppress false alarms from non-threat fauna.
-### 🚧 Perimeter Intelligence
-- **Virtual Tripwire & Geofence Logic** — Define custom intrusion lines and zones; triggers alerts the moment a tracked object crosses a boundary.
-- **Smart Loitering Analysis** — Detects both **stationary loitering** and **pacing behavior**, flagging suspicious dwell-time patterns near the perimeter.
-### 🌗 Low-Light Adaptability
-- **Autonomous Night-Vision & CLAHE Enhancement** — Automatically enhances low-light frames using **CLAHE in LAB color space** for improved detection accuracy after dark.
-### 📝 Logging & Evidence Capture
-- **Universal Text Logging** — Every detection event is timestamped and logged to `all_objects_detected.txt`.
-- **Multi-Category Evidence Snapshots** — Organized image capture into dedicated folders:
-  - `person/`
-  - `car/`
-  - `loitering/`
-- **Clean Anti-Spam Evidentiary Capture** — Snapshots are saved **without HUD or tripwire overlays**, ensuring evidence images stay court-clean, plus cooldown logic to prevent duplicate spam captures.
-### 🔊 Alerts & Interface
-- **Asynchronous Multi-Modal Audio Alarms** — `pygame`-based alarm engine with a **cooldown governor** to prevent overlapping/spammy alerts.
-- **Tactical HUD & Real-Time Alert Ticker** — Live on-screen overlay showing detection status, active alerts, and a scrolling ticker feed.
-- **Keyboard Override Controls**:
-  | Key | Action |
-  |-----|--------|
-  | `n` | Toggle Night Mode |
-  | `q` | Exit Application |
+# 🛡️ Watchtower Subsystems
 
-  ## 🧠 How It Works
- 
-1. **Capture** — Feed is pulled from the checkpost camera (RTSP/USB/IP source).
-2. **Enhance** — If light levels drop, CLAHE (LAB space) auto-enhances the frame.
-3. **Detect & Classify** — Objects are detected and classified (person/vehicle/animal), with wildlife filtered out of alerting logic.
-4. **Track** — Objects are tracked frame-to-frame for trajectory and dwell-time analysis.
-5. **Geofence Check** — Tripwire/zone crossings trigger intrusion alerts.
-6. **Loitering Check** — Stationary/pacing behavior beyond a time threshold triggers a loitering alert.
-7. **Alert** — Audio alarm fires asynchronously (cooldown-governed) + HUD ticker updates.
-8. **Log & Capture** — Event is logged to text file; a clean (overlay-free) snapshot is saved to the relevant evidence folder.
+## 1. Watchtower Camera — Perimeter Surveillance Engine
+An AI-powered perimeter monitoring solution built for high-angle, real-world deployment. Combines object detection, tracking, virtual perimeter logic, and low-light enhancement into an autonomous pipeline.
+
+### ✨ Key Module Features
+* **High-Angle Macro Object Detection & Tracking** — Optimized for elevated tower mounts, tracking distant objects reliably across frames using ByteTrack.
+* **Wildlife Filtering** — Automatically suppresses false alarms triggered by non-threat fauna crossing the perimeter.
+* **Smart Loitering & Pacing Analysis** — Tracks dwell-time via anchor points and Euclidean distance thresholds to flag suspicious stationary behavior.
+* **Clean Evidentiary Snapshot Capture** — Automatically saves unaltered image evidence (`person/`, `car/`, `loitering/`) **without HUD or tripwire graphics**, ensuring court-clean archives.
+* **Multi-Modal Audio Alarms** — `pygame`-driven alarm engine governed by a cooldown timer to prevent audio spam.
+* **Dynamic Tripwire addition** — Admin can integrate a custom tripwire at the time of a new camera regestration we can also change it othertime as well
+
 ---
- 
-## 📌 Notes
-- Evidence snapshots are intentionally captured **without HUD/tripwire graphics overlaid**, keeping them suitable as unaltered visual evidence.
-- Wildlife filtering helps reduce false-positive alerts in rural/forested checkpost deployments.
+
+## 2. ANPR (Automatic Number Plate Recognition) Engine
+A high-performance vehicle identification pipeline designed to capture, isolate, and read license plates from moving traffic feeds.
+
+### ✨ Key Module Features
+* **Custom YOLOv8 Plate Localization** — Trained model (`anprbest.pt`) optimized for diverse lighting and plate angles trained on roboflow universe vehicle data.
+* **EasyOCR & GPU Acceleration** — Automatically leverages CUDA-enabled GPUs for high-throughput text reading with graceful CPU fallback.
+* **Advanced Text Normalization & Cleaning**:
+  * Uppercase enforcement and non-alphanumeric character stripping (`|`, `-`, `[`, `]`).
+  * Automatic removal of regional watermarks (e.g., Indian blue `IND` strips).
+  * Minimum length validation and confidence thresholding (`DETECTION_CONF_THRESHOLD = 0.4`, `OCR_CONF_THRESHOLD = 0.4`).
+* **Deduplicated CSV Logging** — Post-processing `merge_plate_reads` algorithm filters out partial reads and frame-by-frame redundancies, recording the single best high-confidence entry per unique vehicle plate.
+
+---
+
+## 3. EDSR Super-Resolution Upscaling
+A deep-learning enhancement utility leveraging the Enhanced Deep Residual Networks for Single Image Super-Resolution ($	ext{EDSR } 4	imes$) to clarify distant security footage and unclear plates.
+
 ---
 
 ## 👥 Team Nexus
 
-We are a cross-functional team of developers and AI engineers from DAVV, Indore, building Garuda.
+We are a cross-functional team of developers and AI engineers from DAVV, Indore, building Garuda for the Smart India Hackathon.
 
 | Team Member | Core Responsibilities |
 | :--- | :--- |
-| **Akshat Jain** | Frontend, Backend, Database, PPT |
-| **Archil Jakhetiya** | AI & ML Modeling |
-| **Gourvi Jain** | Frontend, Backend, Database, PPT |
-| **Harshil Soni** | Backend, Database, PPT |
-| **Khushvardhan Johari** | Frontend, Backend, PPT |
-| **Aishwarya Kumar Singh (AK)** | AI & ML Modeling |
+| **Akshat Jain** | Frontend, Backend, Database, Presentation & Documentation |
+| **Archil Jakhetiya** | AI & ML Modeling (Facial Recognition & Deep Learning) |
+| **Gourvi Jain** | Frontend, Backend, Database, Presentation & Documentation |
+| **Harshil Soni** | Backend, Database, Presentation & Documentation |
+| **Khushvardhan Johari** | Frontend, Backend, Presentation & Documentation |
+| **Aishwarya Kumar Singh (ak_junior)** | AI & ML Modeling (Object Detection & Tracking Pipelines) |
 
 ---
 
-## 🌿 Repository Structure & Branching
+## 🌿 Repository Structure & Branching Strategy
 
-This repository follows a strict feature-branch workflow to maintain code integrity during the hackathon sprint.
+This repository follows a strict feature-branch workflow to maintain code integrity during the hackathon sprint:
 
-* `main` : Production-ready stable code.
+* `main` : Production-ready stable code and deployment builds.
 * `Feature` : Active development branch for Full-Stack dashboard integration.
 * `Archil_facenet` : Dedicated branch for training and testing the Facial Recognition pipeline.
-* `feature/watchtower-Cam` : Dedicated branch for training and testing the watchtower camera Model and Engine (Completed)
-
----
-
-# todo (AK): 
--> correct the .csv logs 
--> update readme for anpr(completed) and login frontend (if completed)
+* `feature/watchtower-Cam` : Dedicated branch for training and testing the watchtower camera model and boundary engine (Completed).
+* `ANPR` : ANPR integration branch featuring optimized frame skip logic and CSV logging.
