@@ -7,7 +7,7 @@ from ultralytics import YOLO
 
 
 # ---------------------------------------------------------------------------
-# 1. INITIALIZATION of custom trained models
+# 1. INITIALIZATION
 # ---------------------------------------------------------------------------
 # Load the custom-trained YOLOv8 plate-detection model.
 print("Loading YOLOv8 custom weights and EasyOCR engine...")
@@ -39,15 +39,66 @@ def clean_plate(text):
     """
     Normalize raw OCR output into a plate-like string.
     - Uppercase everything.
-    - Strip whitespace, dashes, colons, periods commonly misread by OCR.
+    - Strip out ANY character that is not A-Z or 0-9. This removes
+      whitespace, dashes, colons, periods, and also stray symbols like
+      '|', ']', '[' that EasyOCR sometimes reads from the plate's
+      border/frame rather than the actual characters.
     - Remove a leading 'IND' / 'IN' / 'I' watermark sometimes printed on
       Indian plates (the blue IND strip) that OCR occasionally picks up
       as part of the plate text.
     """
     text = text.upper().strip()
-    text = re.sub(r'[\s\-:.]+', '', text)
+    text = re.sub(r'[^A-Z0-9]', '', text)
     text = re.sub(r'^(?:IND|IN|I)', '', text)
     return text
+
+
+def is_same_plate(a, b):
+    """
+    Exact-match duplicate check: two reads are considered the same plate
+    only if their cleaned text is identical. No fuzzy/partial matching,
+    since the model's own detections are trusted directly now.
+    """
+    return a == b
+
+
+# ---------------------------------------------------------------------------
+# 2B. LENGTH FILTER + EXACT-DUPLICATE REMOVAL
+# ---------------------------------------------------------------------------
+# Minimum plate text length to be considered a real reading rather than
+# OCR noise (a couple of stray characters). Anything longer than this
+# is trusted as coming from the model/OCR being right, since strict
+# regex validation was rejecting correct reads.
+MIN_PLATE_LENGTH = 4
+
+
+def merge_plate_reads(reads):
+    """
+    Takes a list of (frame, timestamp_sec, plate_text, ocr_confidence)
+    tuples collected across the whole video and:
+      1. Keeps only reads longer than MIN_PLATE_LENGTH characters.
+      2. Removes exact duplicates, keeping the highest-confidence read
+         for each distinct plate text.
+
+    Returns a list of (frame, timestamp_sec, plate_text) for logging,
+    one row per distinct plate text, in first-seen order.
+    """
+    best_by_text = {}   # plate_text -> (frame, ts, text, conf)
+    order = []           # preserves first-seen order of each plate_text
+
+    for frame, ts, text, conf in reads:
+        if len(text) <= MIN_PLATE_LENGTH:
+            continue
+
+        if text not in best_by_text:
+            best_by_text[text] = (frame, ts, text, conf)
+            order.append(text)
+        else:
+            _, _, _, best_conf = best_by_text[text]
+            if conf > best_conf:
+                best_by_text[text] = (frame, ts, text, conf)
+
+    return [(best_by_text[t][0], best_by_text[t][1], best_by_text[t][2]) for t in order]
 
 
 # ---------------------------------------------------------------------------
@@ -92,12 +143,13 @@ def detect_and_read_plate(frame):
             or None if nothing was detected.
         plate_text (str or None): cleaned plate text (for logging),
             or None if OCR did not produce a confident read.
+        ocr_confidence (float): confidence of the OCR read, 0.0 if none.
     """
     results = model.predict(frame, conf=DETECTION_CONF_THRESHOLD, verbose=False)
     boxes = results[0].boxes
 
     if len(boxes) == 0:
-        return None, None, None
+        return None, None, None, 0.0
 
     # Pick the box with the highest detection confidence rather than
     # assuming boxes[0] is the best one (YOLO does not guarantee order).
@@ -111,7 +163,7 @@ def detect_and_read_plate(frame):
     x2, y2 = min(w, x2), min(h, y2)
 
     if x2 <= x1 or y2 <= y1:
-        return None, None, None
+        return None, None, None, 0.0
 
     plate_crop = frame[y1:y2, x1:x2]
     processed_crop = preprocess_plate_crop(plate_crop)
@@ -119,6 +171,7 @@ def detect_and_read_plate(frame):
     ocr_results = reader.readtext(processed_crop)
 
     plate_text = None
+    ocr_confidence = 0.0
     if ocr_results and ocr_results[0][2] >= OCR_CONF_THRESHOLD:
         raw_text = ocr_results[0][1]
         ocr_confidence = ocr_results[0][2]
@@ -129,7 +182,7 @@ def detect_and_read_plate(frame):
         # to trust the text, so just label it generically.
         display_str = "Plate Detected"
 
-    return (x1, y1, x2, y2), display_str, plate_text
+    return (x1, y1, x2, y2), display_str, plate_text, ocr_confidence
 
 
 # ---------------------------------------------------------------------------
@@ -166,14 +219,12 @@ def process_video(video_path, output_path, log_path=None):
 
     out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
 
-    # Optional CSV log of every confident plate read, useful for real
-    # ANPR use cases where you need a record rather than just a video.
-    log_file = None
-    csv_writer = None
-    if log_path:
-        log_file = open(log_path, "w", newline="")
-        csv_writer = csv.writer(log_file)
-        csv_writer.writerow(["frame", "timestamp_sec", "plate_text"])
+    # Collect every confident OCR read here as (frame, timestamp_sec,
+    # plate_text, ocr_confidence). Nothing is filtered or deduplicated
+    # during the loop, so a partial/half read is never lost. Merging
+    # and picking the best version of each plate happens once, after
+    # the whole video has been processed (see merge_plate_reads).
+    all_reads = []
 
     frame_count = 0
 
@@ -198,15 +249,18 @@ def process_video(video_path, output_path, log_path=None):
             out.write(frame)
             continue
 
-        box, display_str, plate_text = detect_and_read_plate(frame)
+        box, display_str, plate_text, ocr_confidence = detect_and_read_plate(frame)
 
         if box is not None:
             draw_overlay(frame, box, display_str)
             last_box, last_display_str = box, display_str
 
-            if csv_writer is not None and plate_text:
+            # Record every confident read, no filtering or dedup here.
+            # Merging partial/duplicate reads into one "best" plate per
+            # vehicle happens once, after the full video is processed.
+            if plate_text:
                 timestamp_sec = frame_count / fps
-                csv_writer.writerow([frame_count, f"{timestamp_sec:.2f}", plate_text])
+                all_reads.append((frame_count, timestamp_sec, plate_text, ocr_confidence))
         else:
             # Nothing detected this frame; clear the cache so skipped
             # frames stop drawing a stale box once the plate is gone.
@@ -220,8 +274,19 @@ def process_video(video_path, output_path, log_path=None):
 
     cap.release()
     out.release()
-    if log_file:
-        log_file.close()
+
+    # Merge all collected reads into one row per distinct physical
+    # plate, keeping the most complete/highest-confidence read for each,
+    # then write the CSV once here (instead of row-by-row during the
+    # loop). This is what guarantees "no redundancy, best possible
+    # plate" in the final log.
+    if log_path:
+        merged = merge_plate_reads(all_reads)
+        with open(log_path, "w", newline="") as log_file:
+            csv_writer = csv.writer(log_file)
+            csv_writer.writerow(["frame", "timestamp_sec", "plate_text"])
+            for frame_num, ts, text in merged:
+                csv_writer.writerow([frame_num, f"{ts:.2f}", text])
 
     print(f"Processing complete! Saved output video to: {output_path}")
     if log_path:
@@ -235,5 +300,5 @@ if __name__ == "__main__":
     process_video(
         "ANPR/input-videos/ANPR India Detection Demo - SmartCow - SmartCow (1080p, h264).mp4",
         "ANPR/output-videos/result.mp4",
-        log_path="ANPR/detections.csv",
+        log_path="ANPR/output-videos/detections.csv",
     )
