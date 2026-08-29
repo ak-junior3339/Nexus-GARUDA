@@ -20,14 +20,14 @@ import math
 # ==============================================================================
 #  CONFIGURATING THE SYSTEM FIRST
 # ==============================================================================
-MODEL_PATH = "Checkpost surveillance/WTbest.pt" 
-VIDEO_SOURCE = "Checkpost surveillance/test-input/15396176_1920_1080_25fps.mp4"                            
+MODEL_PATH = "WatchTower surveillance/WTbest.pt" 
+VIDEO_SOURCE = "WatchTower surveillance/test-input/15396176_1920_1080_25fps.mp4"                            
 NIGHT_MODE_ENABLED = False        
 AUTO_NIGHT_MODE = True
 
 
-LOG_DIR = "Checkpost surveillance/Logs"
-BREACH_LOG_DIR = "Checkpost surveillance/breach_logs"
+LOG_DIR = "WatchTower surveillance/Logs"
+BREACH_LOG_DIR = "WatchTower surveillance/breach_logs"
 PERSON_LOG_DIR = os.path.join(BREACH_LOG_DIR, "person")
 CAR_LOG_DIR = os.path.join(BREACH_LOG_DIR, "car")
 LOITER_LOG_DIR = os.path.join(BREACH_LOG_DIR, "loitering")
@@ -70,7 +70,7 @@ def log_event(event_type, object_type, track_id, confidence, details="", evidenc
             track_id, f"{confidence:.2f}", details, evidence_file
         ])
 
-ALARM_PATH = os.path.join("Checkpost surveillance/Alert", "alarm.wav")
+ALARM_PATH = os.path.join("WatchTower surveillance/Alert", "alarm.wav")
 pygame.mixer.init()
 try:
     ALARM_SOUND = pygame.mixer.Sound(ALARM_PATH)
