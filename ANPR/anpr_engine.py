@@ -4,6 +4,7 @@ import re
 import torch
 import easyocr
 from ultralytics import YOLO
+import os
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +32,10 @@ OCR_CONF_THRESHOLD = 0.4
 # does not flicker on and off.
 FRAME_SKIP = 3
 
+LOG_DIR = "ANPR/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
 
+ANPR_LOGS = os.path.join(LOG_DIR, "detection.csv")
 # ---------------------------------------------------------------------------
 # 2. TEXT CLEANING
 # ---------------------------------------------------------------------------
@@ -300,5 +304,5 @@ if __name__ == "__main__":
     process_video(
         "ANPR/input-videos/ANPR India Detection Demo - SmartCow - SmartCow (1080p, h264).mp4",
         "ANPR/output-videos/result.mp4",
-        log_path="ANPR/output-videos/detections.csv",
+        log_path=ANPR_LOGS,
     )
