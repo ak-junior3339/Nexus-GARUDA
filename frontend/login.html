@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GARUDA — Secure Sign In</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="auth-screen">
+  <!-- Indian flag background graphic, low opacity -->
+  <div class="flag-bg-layer"></div>
+
+  <!-- ============================= OPERATOR TERMINAL (USER LOGIN) ============================= -->
+  <form class="auth-card" id="operator-form" data-mode="user" novalidate style="width: 500px; max-width: 95vw;">
+    <div class="auth-card__logo">
+      <img src="assets/garuda-logo.png" alt="GARUDA emblem" />
+    </div>
+    <h1 class="auth-card__title">GARUDA</h1>
+    <p class="auth-card__subtitle">Guided AI for Real-time Unified Detection &amp; Alerting</p>
+
+    <div class="field">
+      <label for="operator-id">User ID</label>
+      <div class="field__input-wrap">
+        <input type="text" id="operator-id" name="userId" placeholder="Enter ID" autocomplete="username" required />
+      </div>
+      <p class="field__error" data-error-for="operator-id">Officer badge number is required.</p>
+    </div>
+
+    <div class="field">
+      <label for="operator-password">Password</label>
+      <div class="field__input-wrap">
+        <input type="password" id="operator-password" name="password" placeholder="••••••••" autocomplete="current-password" required />
+        <button type="button" class="field__toggle-visibility" data-toggle-password="operator-password" aria-label="Show password">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+      <p class="field__error" data-error-for="operator-password">Password is required.</p>
+    </div>
+
+    <div class="field">
+      <label for="operator-captcha">SECURITY VERIFICATION (CAPTCHA)</label>
+      
+      <!-- Flexbox container perfectly centers the image and text -->
+      <div style="margin-bottom: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <img id="operator-captcha-img" src="" alt="Loading CAPTCHA..." style="height: 60px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.08); cursor: pointer;" title="Click to refresh CAPTCHA" onclick="GarudaAuth.loadCaptcha('operator')" />
+        <span style="font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-top: 6px; font-style: italic;">(Click image to refresh)</span>
+      </div>
+      
+      <input type="hidden" id="operator-captcha-id" value="" /> 
+      <div class="field__input-wrap">
+        <input type="text" id="operator-captcha" placeholder="Enter CAPTCHA text" required />
+      </div>
+      <p class="field__error" data-error-for="operator-captcha">CAPTCHA is required.</p>
+    </div>
+
+    <button type="submit" class="auth-submit" id="operator-submit">Sign In</button>
+    <p class="auth-status" id="operator-status" role="status" aria-live="polite"></p>
+
+    <p class="auth-switch">
+      <a href="#" id="switch-to-admin">Admin login? Sign In here</a>
+    </p>
+  </form>
+
+  <!-- ============================= SUPERUSER CONSOLE (ADMIN LOGIN) ============================= -->
+  <form class="auth-card" id="admin-form" data-mode="admin" novalidate style="display:none; width: 500px; max-width: 95vw;">
+    <div class="auth-card__logo">
+      <img src="assets/garuda-logo.png" alt="GARUDA emblem" />
+    </div>
+    <h1 class="auth-card__title">GARUDA</h1>
+    <p class="auth-card__subtitle">Guided AI for Real-time Unified Detection &amp; Alerting</p>
+    <div class="auth-card__badge"><span>ADMIN PORTAL</span></div>
+
+    <div class="field">
+      <label for="admin-id">Admin ID</label>
+      <div class="field__input-wrap">
+        <input type="text" id="admin-id" name="userId" placeholder="Enter ID" autocomplete="username" required />
+      </div>
+      <p class="field__error" data-error-for="admin-id">Superuser ID is required.</p>
+    </div>
+
+    <div class="field">
+      <label for="admin-password">Password</label>
+      <div class="field__input-wrap">
+        <input type="password" id="admin-password" name="password" placeholder="••••••••" autocomplete="current-password" required />
+        <button type="button" class="field__toggle-visibility" data-toggle-password="admin-password" aria-label="Show password">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+      <p class="field__error" data-error-for="admin-password">Password is required.</p>
+    </div>
+    <div class="field">
+      <label for="admin-captcha">SECURITY VERIFICATION (CAPTCHA)</label>
+      
+      <!-- Flexbox container perfectly centers the image and text -->
+      <div style="margin-bottom: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <img id="admin-captcha-img" src="" alt="Loading CAPTCHA..." style="height: 60px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.08); cursor: pointer;" title="Click to refresh CAPTCHA" onclick="GarudaAuth.loadCaptcha('admin')" />
+        <span style="font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-top: 6px; font-style: italic;">(Click image to refresh)</span>
+      </div>
+      
+      <input type="hidden" id="admin-captcha-id" value="" /> 
+      <div class="field__input-wrap">
+        <input type="text" id="admin-captcha" placeholder="Enter CAPTCHA text" required />
+      </div>
+      <p class="field__error" data-error-for="admin-captcha">CAPTCHA is required.</p>
+    </div>
+
+    <button type="submit" class="auth-submit" id="admin-submit">Sign In</button>
+    <p class="auth-status" id="admin-status" role="status" aria-live="polite"></p>
+
+    <p class="auth-switch">
+      <a href="#" id="switch-to-operator">User login? Sign In here</a>
+    </p>
+  </form>
+</div>
+
+<script src="app.js"></script>
+<script>
+  // Page-specific wiring: tab switching + form submission -> GarudaAuth (see app.js)
+  document.addEventListener('DOMContentLoaded', () => {
+    GarudaAuth.loadCaptcha('operator');
+    GarudaAuth.loadCaptcha('admin');
+
+    const operatorForm = document.getElementById('operator-form');
+    const adminForm = document.getElementById('admin-form');
+
+    document.getElementById('switch-to-admin').addEventListener('click', (e) => {
+      e.preventDefault();
+      operatorForm.style.display = 'none';
+      adminForm.style.display = '';
+    });
+    document.getElementById('switch-to-operator').addEventListener('click', (e) => {
+      e.preventDefault();
+      adminForm.style.display = 'none';
+      operatorForm.style.display = '';
+    });
+
+    document.querySelectorAll('[data-toggle-password]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = document.getElementById(btn.dataset.togglePassword);
+        input.type = input.type === 'password' ? 'text' : 'password';
+      });
+    });
+
+    operatorForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      GarudaAuth.handleLoginSubmit({
+        form: operatorForm,
+        role: 'user',
+        idField: 'operator-id',
+        passwordField: 'operator-password',
+        statusEl: document.getElementById('operator-status'),
+        submitBtn: document.getElementById('operator-submit'),
+        redirectTo: 'dashboard.html',
+      });
+    });
+
+    adminForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      GarudaAuth.handleLoginSubmit({
+        form: adminForm,
+        role: 'admin',
+        idField: 'admin-id',
+        passwordField: 'admin-password',
+        statusEl: document.getElementById('admin-status'),
+        submitBtn: document.getElementById('admin-submit'),
+        redirectTo: 'admin.html',
+      });
+    });
+  });
+</script>
+</body>
+</html>
