@@ -117,3 +117,8 @@ This repository follows a strict feature-branch workflow to maintain code integr
 * `Archil_facenet` : Dedicated branch for training and testing the Facial Recognition pipeline.
 * `feature/watchtower-Cam` : Dedicated branch for training and testing the watchtower camera model and boundary engine (Completed).
 * `ANPR` : ANPR integration branch featuring optimized frame skip logic and CSV logging.
+
+
+
+python backend/main.py
+python -m http.server 5500
