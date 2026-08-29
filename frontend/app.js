@@ -2,20 +2,17 @@
    GARUDA — Master Client Logic
    SIH PS 26187 — Team Nexus
    ----------------------------------------------------------------------------
-   This file is organised into clearly separated modules so it can be wired
-   directly into a FastAPI + PostgreSQL + YOLOv8/OpenCV backend without any
-   restructuring:
-
-     GarudaConfig      -> environment / endpoint configuration
-     GarudaAPI         -> thin fetch() wrapper for the REST backend
-     GarudaAuthStore   -> JWT + session persistence (localStorage)
-     GarudaAuth        -> login/logout flows (used by login.html)
-     GarudaGuard       -> route protection (used by dashboard.html / admin.html)
-     GarudaSocket      -> WebSocket client for real-time AI alerts
-     GarudaState       -> in-memory client state (incidents, cameras, users)
-     GarudaDashboard   -> UI controller for dashboard.html
-     GarudaAdmin       -> UI controller for admin.html
-     GarudaToast       -> lightweight notification helper
+   Modules:
+     GarudaConfig      -> Endpoint & storage configuration
+     GarudaAPI         -> REST API wrapper for FastAPI
+     GarudaAuthStore   -> Session & JWT persistence
+     GarudaAuth        -> Login / Logout workflows & CAPTCHA handling
+     GarudaGuard       -> Role-based route guard
+     GarudaSocket      -> WebSocket real-time alerts & Force-Logout listener
+     GarudaToast       -> Military HUD notifications
+     GarudaDashboard   -> Dashboard controller & telemetry metrics
+     GarudaAdmin       -> Admin operator provisioning & session control
+     GarudaCameraViewer-> Active camera switcher, Night-mode toggle (Hot-key: N)
    ============================================================================ */
 
 /* ---------------------------------------------------------------------------
@@ -26,13 +23,11 @@ const GarudaConfig = Object.freeze({
   WS_BASE_URL: 'ws://localhost:8000/ws',
   TOKEN_STORAGE_KEY: 'garuda_auth_token',
   SESSION_STORAGE_KEY: 'garuda_session',
-  // When false, GarudaAPI falls back to local mock data so the UI remains
-  // fully demoable without a live FastAPI backend running.
   BACKEND_ENABLED: true,
 });
 
 /* ---------------------------------------------------------------------------
-   2. REST API WRAPPER  (-> FastAPI)
+   2. REST API WRAPPER
    --------------------------------------------------------------------------- */
 const GarudaAPI = {
   async _request(path, options = {}) {
@@ -55,62 +50,38 @@ const GarudaAPI = {
     return response.status === 204 ? null : response.json();
   },
 
-  // --- Auth ---------------------------------------------------------------
-  // POST /auth/login  { userId, password, role } -> { token, user }
   login(payload) {
     return this._request('/auth/login', { method: 'POST', body: JSON.stringify(payload) });
   },
-  // POST /auth/logout
   logout() {
     return this._request('/auth/logout', { method: 'POST' });
   },
-
-  // --- Incidents / Alerts ---------------------------------------------------
-  // GET /incidents?status=unresolved
   fetchIncidents(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return this._request(`/incidents${qs ? `?${qs}` : ''}`);
   },
-  // PATCH /incidents/{id}/dismiss
   dismissIncident(incidentId) {
     return this._request(`/incidents/${incidentId}/dismiss`, { method: 'PATCH' });
   },
-
-  // --- Cameras / AI Feed -----------------------------------------------------
-  // GET /cameras -> [{ id, name, streamUrl, coords }]
   fetchCameras() {
     return this._request('/cameras');
   },
-  // GET /analytics/threat-frequency?window=24h
-  fetchThreatFrequency(windowParam = '24h') {
-    return this._request(`/analytics/threat-frequency?window=${windowParam}`);
-  },
-  // GET /audit-log?scope=camera|global
-  fetchAuditLog(scope = 'camera') {
-    return this._request(`/audit-log?scope=${scope}`);
-  },
-
-  // --- Admin: Operator Management ---------------------------------------
-  // GET /admin/operators
   fetchOperators() {
     return this._request('/admin/operators');
   },
-  // POST /admin/operators  { userId, fullName, clearance, password }
   provisionUser(payload) {
     return this._request('/admin/operators', { method: 'POST', body: JSON.stringify(payload) });
   },
-  // POST /admin/operators/{id}/force-logout
   forceLogoutUser(userId) {
     return this._request(`/admin/operators/${userId}/force-logout`, { method: 'POST' });
   },
-  // DELETE /admin/operators/{id}
   deleteUser(userId) {
     return this._request(`/admin/operators/${userId}`, { method: 'DELETE' });
   },
 };
 
 /* ---------------------------------------------------------------------------
-   3. AUTH STORE  (JWT persistence)
+   3. AUTH STORE
    --------------------------------------------------------------------------- */
 const GarudaAuthStore = {
   setSession({ token, role, userId, fullName }) {
@@ -137,7 +108,7 @@ const GarudaAuthStore = {
 };
 
 /* ---------------------------------------------------------------------------
-   4. AUTH FLOWS  (login.html)
+   4. AUTH FLOWS
    --------------------------------------------------------------------------- */
 const GarudaAuth = {
   async loadCaptcha(mode) {
@@ -147,9 +118,13 @@ const GarudaAuth = {
       const data = await res.json();
       const captchaId = data.captcha_id;
 
-      document.getElementById(`${mode}-captcha-id`).value = captchaId;
-      document.getElementById(`${mode}-captcha-img`).src = `${GarudaConfig.API_BASE_URL}/auth/captcha/image/${captchaId}`;
-      document.getElementById(`${mode}-captcha`).value = '';
+      const idField = document.getElementById(`${mode}-captcha-id`);
+      const imgField = document.getElementById(`${mode}-captcha-img`);
+      const valField = document.getElementById(`${mode}-captcha`);
+
+      if (idField) idField.value = captchaId;
+      if (imgField) imgField.src = `${GarudaConfig.API_BASE_URL}/auth/captcha/image/${captchaId}`;
+      if (valField) valField.value = '';
     } catch (err) {
       console.error('Failed to load CAPTCHA', err);
     }
@@ -159,7 +134,6 @@ const GarudaAuth = {
     const userIdInput = document.getElementById(idField);
     const passwordInput = document.getElementById(passwordField);
 
-    // Dynamically get the captcha fields based on the role (operator or admin)
     const prefix = role === 'admin' ? 'admin' : 'operator';
     const captchaInput = document.getElementById(`${prefix}-captcha`);
     const captchaIdInput = document.getElementById(`${prefix}-captcha-id`);
@@ -169,7 +143,6 @@ const GarudaAuth = {
     const captchaAnswer = captchaInput ? captchaInput.value.trim() : '';
     const captchaId = captchaIdInput ? captchaIdInput.value : '';
 
-    // Clear previous errors
     form.querySelectorAll('.field__error').forEach((el) => el.classList.remove('is-visible'));
 
     let hasError = false;
@@ -184,7 +157,6 @@ const GarudaAuth = {
     try {
       let session;
       if (GarudaConfig.BACKEND_ENABLED) {
-        // Construct payload exactly matching your FastAPI LoginRequest BaseModel
         const payload = {
           username: userId,
           password: password,
@@ -193,8 +165,6 @@ const GarudaAuth = {
         };
 
         const res = await GarudaAPI.login(payload);
-
-        // Store real user details returned by the FastAPI backend.
         session = {
           token: res.access_token,
           role: res.role || role,
@@ -212,6 +182,7 @@ const GarudaAuth = {
     } catch (err) {
       statusEl.textContent = `ACCESS DENIED — ${err.message || 'Invalid credentials.'}`;
       submitBtn.disabled = false;
+      this.loadCaptcha(prefix);
     }
   },
 
@@ -219,7 +190,6 @@ const GarudaAuth = {
     try {
       if (GarudaConfig.BACKEND_ENABLED) await GarudaAPI.logout();
     } catch {
-      /* non-fatal: proceed with client-side logout regardless */
     } finally {
       GarudaAuthStore.clear();
       window.location.href = redirectTo;
@@ -228,7 +198,7 @@ const GarudaAuth = {
 };
 
 /* ---------------------------------------------------------------------------
-   5. ROUTE GUARD  (dashboard.html / admin.html)
+   5. ROUTE GUARD
    --------------------------------------------------------------------------- */
 const GarudaGuard = {
   requireRole(expectedRole, redirectTo = 'login.html') {
@@ -242,7 +212,7 @@ const GarudaGuard = {
 };
 
 /* ---------------------------------------------------------------------------
-   6. REAL-TIME ALERT WEBSOCKET  (-> FastAPI /ws endpoint)
+   6. REAL-TIME ALERT WEBSOCKET
    --------------------------------------------------------------------------- */
 const GarudaSocket = {
   _socket: null,
@@ -251,37 +221,28 @@ const GarudaSocket = {
 
   connectAlertWebSocket(onAlert) {
     this._onAlertCallback = onAlert;
-
-    if (!GarudaConfig.BACKEND_ENABLED) {
-      // DEMO MODE: emit a synthetic alert periodically so the incident feed
-      // and audit log feel alive without a live inference backend.
-      this._startDemoAlertLoop();
-      return;
-    }
+    if (!GarudaConfig.BACKEND_ENABLED) return;
 
     const token = GarudaAuthStore.getToken();
     this._socket = new WebSocket(`${GarudaConfig.WS_BASE_URL}/alerts?token=${token}`);
 
     this._socket.addEventListener('open', () => {
       this._reconnectAttempts = 0;
-      console.info('[GarudaSocket] connected to alert stream');
+      console.info('[GarudaSocket] Connected to tactical alert stream');
     });
 
     this._socket.addEventListener('message', (event) => {
       try {
         const data = JSON.parse(event.data);
-        
-        // --- LISTEN FOR FORCE LOGOUT SIGNAL ---
         if (data.event === 'FORCE_LOGOUT') {
           alert('YOUR SESSION HAS BEEN TERMINATED BY AN ADMINISTRATOR.');
           GarudaAuthStore.clear();
           window.location.href = 'login.html';
           return;
         }
-
         this._onAlertCallback?.(data);
       } catch (err) {
-        console.error('[GarudaSocket] malformed alert payload', err);
+        console.error('[GarudaSocket] Malformed alert payload', err);
       }
     });
 
@@ -291,36 +252,9 @@ const GarudaSocket = {
       setTimeout(() => this.connectAlertWebSocket(onAlert), delay);
     });
 
-    this._socket.addEventListener('error', (err) => {
-      console.error('[GarudaSocket] socket error', err);
-      this._socket.close();
+    this._socket.addEventListener('error', () => {
+      this._socket?.close();
     });
-  },
-
-  _startDemoAlertLoop() {
-    const cameras = [
-      { id: 'CAM-01', name: 'CHECKPOST SOUTH' },
-      { id: 'CAM-02', name: 'WATCHTOWER NORTH' },
-      { id: 'CAM-03', name: 'PATROL GATE 02' },
-      { id: 'CAM-04', name: 'FORWARD OBS POST 09' },
-    ];
-    const entities = ['INTRUDER', 'UNIDENTIFIED VEHICLE', 'PERIMETER BREACH'];
-
-    setInterval(() => {
-      const cam = cameras[Math.floor(Math.random() * cameras.length)];
-      const entity = entities[Math.floor(Math.random() * entities.length)];
-      const confidence = (85 + Math.random() * 14).toFixed(1);
-      const now = new Date();
-
-      this._onAlertCallback?.({
-        id: `INC-${Date.now()}`,
-        title: `${entity} DETECTED`,
-        time: now.toLocaleTimeString('en-IN', { hour12: false }) + ' IST',
-        cameraId: cam.id,
-        location: `${cam.id} · ${cam.name}`,
-        confidence: `${confidence}%`,
-      });
-    }, 45000);
   },
 
   disconnect() {
@@ -330,15 +264,7 @@ const GarudaSocket = {
 };
 
 /* ---------------------------------------------------------------------------
-   7. CLIENT STATE
-   --------------------------------------------------------------------------- */
-const GarudaState = {
-  incidents: [],
-  unresolvedCount: 0,
-};
-
-/* ---------------------------------------------------------------------------
-   8. TOAST HELPER
+   7. TOAST NOTIFICATIONS
    --------------------------------------------------------------------------- */
 const GarudaToast = {
   show(message, variant = 'default') {
@@ -348,16 +274,15 @@ const GarudaToast = {
     el.className = `toast ${variant === 'error' ? 'toast--error' : ''} ${variant === 'success' ? 'toast--success' : ''}`.trim();
     el.textContent = message;
     stack.appendChild(el);
-    setTimeout(() => el.remove(), 4200);
+    setTimeout(() => el.remove(), 4000);
   },
 };
 
 /* ---------------------------------------------------------------------------
-   9. DASHBOARD CONTROLLER  (dashboard.html)
+   8. DASHBOARD CONTROLLER
    --------------------------------------------------------------------------- */
 const GarudaDashboard = {
   init() {
-    // Get the current session and reject only unauthenticated visitors.
     const session = GarudaAuthStore.getSession();
     if (!session) {
       window.location.href = 'login.html';
@@ -365,12 +290,8 @@ const GarudaDashboard = {
     }
 
     this._bindIdentity();
-    this._bindGridLayout();
-    this._bindVisionMode();
-    this._bindIncidentDismiss();
     this._bindLogout();
     this._startClock();
-    this._renderThreatChart();
     GarudaSocket.connectAlertWebSocket((alert) => this._prependIncident(alert));
   },
 
@@ -378,78 +299,18 @@ const GarudaDashboard = {
     const session = GarudaAuthStore.getSession();
     if (!session) return;
 
-    // Dynamic user name and ID.
     const nameEl = document.getElementById('user-name');
     const idEl = document.getElementById('user-id');
-    if (nameEl && session.fullName) {
-      nameEl.textContent = session.fullName.toUpperCase();
-    }
+    if (nameEl && session.fullName) nameEl.textContent = session.fullName.toUpperCase();
     if (idEl && session.userId) idEl.textContent = session.userId;
 
-    // Reveal admin navigation only for admin sessions.
     const adminNavGroup = document.getElementById('admin-nav-group');
     if (adminNavGroup && session.role === 'admin') {
       adminNavGroup.style.display = 'inline-flex';
-
-      const adminConsoleBtn = document.getElementById('tab-admin-console');
-      if (adminConsoleBtn) {
-        adminConsoleBtn.addEventListener('click', () => {
-          window.location.href = 'admin.html';
-        });
-      }
+      document.getElementById('tab-admin-console')?.addEventListener('click', () => {
+        window.location.href = 'admin.html';
+      });
     }
-  },
-
-  _bindGridLayout() {
-    const group = document.getElementById('grid-layout-group');
-    const grid = document.getElementById('camera-grid');
-    if (!group || !grid) return;
-    group.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-layout]');
-      if (!btn) return;
-      group.querySelectorAll('button').forEach((b) => b.classList.remove('is-active'));
-      btn.classList.add('is-active');
-      grid.dataset.layout = btn.dataset.layout;
-    });
-  },
-
-  _bindVisionMode() {
-    const group = document.getElementById('vision-mode-group');
-    if (!group) return;
-    group.addEventListener('click', (e) => {
-      const btn = e.target.closest('button[data-vision]');
-      if (!btn) return;
-      group.querySelectorAll('button').forEach((b) => b.classList.remove('is-active'));
-      btn.classList.add('is-active');
-      // CLAHE-style vision toggle is applied via CSS filters, see body[data-vision] rules
-      document.body.dataset.vision = btn.dataset.vision;
-    });
-  },
-
-  _bindIncidentDismiss() {
-    const grid = document.getElementById('camera-grid');
-    if (!grid) return;
-    
-    grid.addEventListener('click', async (e) => {
-      const btn = e.target.closest('[data-dismiss]');
-      if (!btn) return;
-      
-      const row = btn.closest('.cam-incident-row');
-      const cell = btn.closest('.camera-cell');
-      const incidentId = row?.dataset.incidentId;
-      const cameraId = cell?.dataset.camId;
-
-      try {
-        if (GarudaConfig.BACKEND_ENABLED && incidentId) {
-          await GarudaAPI.dismissIncident(incidentId);
-        }
-        row.remove();
-        if (cameraId) this._updateCameraBadge(cameraId, -1);
-        GarudaToast.show('Incident dismissed.', 'success');
-      } catch (err) {
-        GarudaToast.show(`Could not dismiss incident: ${err.message}`, 'error');
-      }
-    });
   },
 
   _bindLogout() {
@@ -466,61 +327,46 @@ const GarudaDashboard = {
   },
 
   _prependIncident(alert) {
-    const list = document.getElementById(`feed-${alert.cameraId}`);
-    if (!list) return;
+    const list = document.getElementById('active-incident-list');
+    const badge = document.getElementById('active-incident-count');
 
-    // Remove "NO ACTIVE INCIDENTS" if present
-    const emptyState = list.querySelector('.cam-incident-empty');
+    // Only display alert in list if it belongs to current active camera
+    if (typeof GarudaCameraViewer !== 'undefined') {
+      const currentCam = GarudaCameraViewer.cameras[GarudaCameraViewer.currentIndex];
+      if (alert.cameraId && alert.cameraId !== currentCam) {
+        return;
+      }
+    }
+
+    if (!list) return;
+    const emptyState = list.querySelector('.incident-empty');
     if (emptyState) emptyState.remove();
 
     const row = document.createElement('div');
-    row.className = 'cam-incident-row';
+    row.className = 'incident-row';
     row.dataset.incidentId = alert.id;
     row.innerHTML = `
       <span class="title"><span class="dot dot--alert"></span> ${alert.title.toUpperCase()}</span>
-      <span class="meta">${alert.time} &nbsp;&nbsp; CONF: ${alert.confidence}</span>
-      <button class="btn-dismiss" data-dismiss>DISMISS</button>
+      <span class="meta">${alert.time} &nbsp;|&nbsp; CONF: ${alert.confidence}</span>
+      <button class="btn-mini" onclick="this.closest('.incident-row').remove()">DISMISS</button>
     `;
     list.prepend(row);
-    this._updateCameraBadge(alert.cameraId, 1);
-    GarudaToast.show(`New alert: ${alert.title} — ${alert.location}`);
-  },
 
-  _updateCameraBadge(cameraId, delta) {
-    const badge = document.getElementById(`badge-${cameraId}`);
-    if (!badge) return;
-    const current = parseInt(badge.dataset.count, 10) || 0;
-    const next = Math.max(0, current + delta);
-    badge.dataset.count = next;
-    badge.textContent = `${next} ACTIVE`;
-
-    // Restore empty UI if zero
-    if (next === 0) {
-      const list = document.getElementById(`feed-${cameraId}`);
-      if (list) list.innerHTML = `<div class="cam-incident-empty">NO ACTIVE INCIDENTS</div>`;
+    if (badge) {
+      const current = parseInt(badge.dataset.count, 10) || 0;
+      badge.dataset.count = current + 1;
+      badge.textContent = `${current + 1} ENTRIES`;
     }
-  },
 
-  _renderThreatChart() {
-    const mount = document.getElementById('threat-chart');
-    if (!mount) return;
-    const data = [7, 9, 11, 9, 4, 3, 2, 1, 3, 5, 4, 6, 9];
-    const w = 600, h = 150, pad = 8;
-    const max = Math.max(...data);
-    const stepX = (w - pad * 2) / (data.length - 1);
-    const points = data
-      .map((v, i) => `${pad + i * stepX},${h - pad - (v / max) * (h - pad * 2)}`)
-      .join(' ');
-
-    mount.innerHTML = `
-      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-        <polyline points="${points}" fill="none" stroke="#FFFFFF" stroke-width="2" />
-      </svg>`;
+    // Suppress pop-up toast if it's marked as silent (e.g. routine ANPR plate logs)
+    if (!alert.silent) {
+      GarudaToast.show(`ALERT: ${alert.title} on ${alert.cameraId}`, alert.siren ? 'error' : 'default');
+    }
   },
 };
 
 /* ---------------------------------------------------------------------------
-   10. ADMIN CONTROLLER  (admin.html)
+   9. ADMIN CONTROLLER
    --------------------------------------------------------------------------- */
 const GarudaAdmin = {
   init() {
@@ -544,7 +390,6 @@ const GarudaAdmin = {
       const operators = await GarudaAPI.fetchOperators();
       const tbody = document.querySelector('#operator-table tbody');
       if (tbody) tbody.innerHTML = '';
-
       operators.forEach((operator) => {
         if (operator.role === 'admin') return;
         this._appendOperatorRow(operator);
@@ -589,7 +434,7 @@ const GarudaAdmin = {
           row.dataset.status = 'offline';
           row.querySelector('.status-flag').className = 'status-flag status-flag--offline';
           row.querySelector('.status-flag').innerHTML = '<span class="dot dot--offline"></span>OFFLINE';
-          row.querySelector('[data-action="force-logout"]').disabled = true;
+          btn.disabled = true;
           GarudaToast.show(`${userId} forced offline.`, 'success');
         } catch (err) {
           GarudaToast.show(`Force logout failed: ${err.message}`, 'error');
@@ -597,7 +442,7 @@ const GarudaAdmin = {
       }
 
       if (btn.dataset.action === 'delete-account') {
-        const confirmed = window.confirm(`Permanently delete operator ${userId}? This cannot be undone.`);
+        const confirmed = window.confirm(`Permanently delete operator ${userId}?`);
         if (!confirmed) return;
         try {
           if (GarudaConfig.BACKEND_ENABLED) await GarudaAPI.deleteUser(userId);
@@ -617,12 +462,8 @@ const GarudaAdmin = {
     const form = document.getElementById('provision-form');
     if (!overlay || !openBtn || !form) return;
 
-    const open = () => overlay.classList.add('is-open');
-    const close = () => { overlay.classList.remove('is-open'); form.reset(); };
-
-    openBtn.addEventListener('click', open);
-    cancelBtn.addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    openBtn.addEventListener('click', () => overlay.classList.add('is-open'));
+    cancelBtn.addEventListener('click', () => { overlay.classList.remove('is-open'); form.reset(); });
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -635,15 +476,13 @@ const GarudaAdmin = {
         role: clearanceVal === 'ADMIN' ? 'admin' : 'user',
         status: 'offline',
       };
-      if (!payload.user_id || !payload.full_name || !payload.password) return;
 
       try {
-        if (GarudaConfig.BACKEND_ENABLED) {
-          await GarudaAPI.provisionUser(payload);
-        }
+        if (GarudaConfig.BACKEND_ENABLED) await GarudaAPI.provisionUser(payload);
         this._appendOperatorRow(payload);
         GarudaToast.show(`Operator ${payload.user_id} provisioned.`, 'success');
-        close();
+        overlay.classList.remove('is-open');
+        form.reset();
       } catch (err) {
         GarudaToast.show(`Provisioning failed: ${err.message}`, 'error');
       }
@@ -671,4 +510,191 @@ const GarudaAdmin = {
       </td>`;
     tbody.appendChild(row);
   },
+};
+
+/* ---------------------------------------------------------------------------
+   10. DYNAMIC CAMERA ROTATION & NIGHT MODE (HOT-KEY: 'N')
+   --------------------------------------------------------------------------- */
+const GarudaCameraViewer = {
+  cameras: ['CAM-01', 'CAM-02', 'CAM-03', 'CAM-04'],
+  cameraNames: {
+    'CAM-01': 'CHECKPOST ANPR SECTOR',
+    'CAM-02': 'WATCHTOWER NORTH PERIMETER',
+    'CAM-03': 'PATROL GATE 02 (WEBCAM)',
+    'CAM-04': 'FORWARD OBS POST 09'
+  },
+  cameraCoords: {
+    'CAM-01': '28.6139°N 77.2090°E',
+    'CAM-02': '28.6200°N 77.2150°E',
+    'CAM-03': '28.6100°N 77.2000°E',
+    'CAM-04': '28.6050°N 77.1980°E'
+  },
+  currentIndex: 0,
+  nightModeEnabled: false,
+
+  async init() {
+    try {
+      const res = await fetch(`${GarudaConfig.API_BASE_URL}/cameras/list`);
+      if (res.ok) {
+        const camList = await res.json();
+        if (camList && camList.length > 0) {
+          this.cameras = camList.map(c => c.id);
+        }
+      }
+    } catch {
+      console.warn("Using default camera list:", this.cameras);
+    }
+
+    this._renderIndicators();
+    this._bindControls();
+    this.switchCamera(0);
+  },
+
+  _renderIndicators() {
+    const container = document.getElementById('cam-selector-tray') || document.getElementById('cam-indicators');
+    if (!container) return;
+    container.innerHTML = '';
+
+    this.cameras.forEach((camId, idx) => {
+      const chip = document.createElement('button');
+      chip.className = `cam-chip ${idx === this.currentIndex ? 'is-active' : ''}`;
+      chip.dataset.cam = camId;
+      chip.textContent = camId;
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.switchCamera(idx);
+      });
+      container.appendChild(chip);
+    });
+  },
+
+  async toggleNightVision() {
+    const currentCam = this.cameras[this.currentIndex];
+    if (currentCam === 'CAM-01') {
+      GarudaToast.show('Night Vision CLAHE is active on Watchtower cameras only.', 'default');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${GarudaConfig.API_BASE_URL}/cameras/toggle-night-mode`, { method: 'POST' });
+      const data = await res.json();
+      this.nightModeStatus = data.status;
+      this.nightModeEnabled = data.is_enabled;
+      this._updateNightVisionUI();
+      GarudaToast.show(`Emergency Override: Night Vision ${data.status}`, this.nightModeEnabled ? 'success' : 'default');
+    } catch (e) {
+      console.error("Failed to toggle emergency night mode:", e);
+    }
+  },
+
+  _updateNightVisionUI() {
+    const btn = document.getElementById('night-vision-btn');
+    const statusText = document.getElementById('night-mode-status');
+    const currentCam = this.cameras[this.currentIndex];
+
+    if (!btn) return;
+
+    if (currentCam === 'CAM-01') {
+      btn.style.display = 'none';
+      return;
+    } else {
+      btn.style.display = 'flex';
+    }
+
+    const label = this.nightModeStatus || 'AUTO';
+    if (statusText) statusText.textContent = label;
+
+    if (this.nightModeEnabled) {
+      btn.style.borderColor = '#22c55e';
+      btn.style.background = 'rgba(20, 83, 45, 0.85)';
+      btn.style.color = '#fff';
+      if (statusText) statusText.style.color = '#4ade80';
+    } else {
+      btn.style.borderColor = 'rgba(255,255,255,0.25)';
+      btn.style.background = 'rgba(5,8,17,0.85)';
+      btn.style.color = '#94a3b8';
+      if (statusText) statusText.style.color = '#64748b';
+    }
+  },
+
+  switchCamera(index) {
+    if (index < 0) index = this.cameras.length - 1;
+    if (index >= this.cameras.length) index = 0;
+    this.currentIndex = index;
+
+    const camId = this.cameras[this.currentIndex];
+    const streamImg = document.getElementById('active-camera-stream');
+    const overlay = document.getElementById('no-network-overlay');
+    const titleEl = document.getElementById('active-cam-title');
+    const headerEl = document.getElementById('active-incident-heading') || document.getElementById('active-incident-header');
+    const coordsEl = document.getElementById('active-cam-coords');
+
+    if (overlay) overlay.style.display = 'none';
+
+    // 1. Instantly silence siren on camera switch
+    fetch(`${GarudaConfig.API_BASE_URL}/cameras/silence`, { method: 'POST' }).catch(() => {});
+
+    // 2. Connect to the active camera stream
+    if (streamImg) {
+      streamImg.src = `${GarudaConfig.API_BASE_URL}/cameras/${camId}/stream?t=${Date.now()}`;
+    }
+
+    const camName = this.cameraNames[camId] || `STATION ${camId}`;
+    if (titleEl) titleEl.textContent = `${camId}: ${camName}`;
+    if (headerEl) headerEl.textContent = `${camId} · SURVEILLANCE & THREAT TELEMETRY LOG`;
+    if (coordsEl && this.cameraCoords[camId]) coordsEl.textContent = this.cameraCoords[camId];
+
+    // Clear incident feed for new camera
+    const incidentList = document.getElementById('active-incident-list');
+    const incidentCount = document.getElementById('active-incident-count');
+    if (incidentList) {
+      incidentList.innerHTML = '<div class="incident-empty">LOG CLEAR — SYSTEM SCANNING ACTIVE SECTOR</div>';
+    }
+    if (incidentCount) {
+      incidentCount.dataset.count = '0';
+      incidentCount.textContent = '0 ENTRIES';
+    }
+
+    // Update Chips
+    const container = document.getElementById('cam-selector-tray') || document.getElementById('cam-indicators');
+    if (container) {
+      const chips = container.querySelectorAll('.cam-chip, button');
+      chips.forEach((c, i) => {
+        if (i === index) c.classList.add('is-active');
+        else c.classList.remove('is-active');
+      });
+    }
+
+    // Refresh Night mode button visibility
+    this._updateNightVisionUI();
+
+    console.info(`[GarudaViewer] Switched active camera to ${camId}`);
+  },
+
+  _bindControls() {
+    const prevBtn = document.getElementById('cam-prev-btn');
+    const nextBtn = document.getElementById('cam-next-btn');
+    const nightBtn = document.getElementById('night-vision-btn');
+
+    if (prevBtn) prevBtn.onclick = (e) => { e.preventDefault(); this.switchCamera(this.currentIndex - 1); };
+    if (nextBtn) nextBtn.onclick = (e) => { e.preventDefault(); this.switchCamera(this.currentIndex + 1); };
+    if (nightBtn) nightBtn.onclick = (e) => { e.preventDefault(); this.toggleNightVision(); };
+
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        this.toggleNightVision();
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        this.switchCamera(this.currentIndex - 1);
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        this.switchCamera(this.currentIndex + 1);
+      }
+    });
+  }
 };
