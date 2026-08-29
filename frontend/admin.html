@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GARUDA | Admin Console</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="admin-body">
+
+  <header class="topbar">
+    <div class="topbar__brand">
+      <img src="assets/garuda-logo.png" alt="GARUDA emblem" />
+      <span>GARUDA</span>
+    </div>
+
+    <div class="topbar__center">
+      <div class="btn-group" role="group" aria-label="Console navigation">
+        <button type="button" class="is-active" id="tab-admin-console">ADMIN CONSOLE</button>
+        <button type="button" id="tab-launch-dashboard">LAUNCH TACTICAL DASHBOARD</button>
+      </div>
+    </div>
+
+    <div class="topbar__right">
+      <div class="identity-chip">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <strong id="admin-name">LOADING...</strong>&nbsp;|&nbsp;<span id="admin-id">---</span>
+      </div>
+      <button type="button" class="btn-logout" id="logout-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1 2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        LOG OUT
+      </button>
+    </div>
+  </header>
+  <!-- ============================= OPERATOR ROSTER ============================= -->
+  <section class="admin-section">
+    <div class="admin-section__head">
+      <h2>OPERATOR ROSTER &amp; SESSION CONTROL</h2>
+      <button type="button" class="btn-primary" id="open-provision-modal">+ PROVISION NEW OPERATOR</button>
+    </div>
+
+    <div class="admin-table-wrap">
+      <table class="data-table" id="operator-table">
+        <thead>
+          <tr>
+            <th>STATUS</th>
+            <th>USER ID</th>
+            <th>FULL NAME</th>
+            <th>CLEARANCE</th>
+            <th>ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-user-id="ID-8842" data-status="online">
+            <td><span class="status-flag status-flag--online"><span class="dot dot--live"></span>ONLINE</span></td>
+            <td class="is-primary">ID-8842</td>
+            <td class="is-primary">COMMANDANT R. VERMA</td>
+            <td>STANDARD OPERATOR</td>
+            <td>
+              <button type="button" class="btn-mini" data-action="force-logout">FORCE LOGOUT</button>
+              <button type="button" class="btn-mini btn-mini--danger" data-action="delete-account">DELETE ACCOUNT</button>
+            </td>
+          </tr>
+          <tr data-user-id="ID-1193" data-status="offline">
+            <td><span class="status-flag status-flag--offline"><span class="dot dot--offline"></span>OFFLINE</span></td>
+            <td class="is-primary">ID-1193</td>
+            <td class="is-primary">PATROL OFFICER S. KHAN</td>
+            <td>STANDARD OPERATOR</td>
+            <td>
+              <button type="button" class="btn-mini" data-action="force-logout" disabled>FORCE LOGOUT</button>
+              <button type="button" class="btn-mini btn-mini--danger" data-action="delete-account">DELETE ACCOUNT</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="divider-strong"></div>
+
+  <!-- ============================= GLOBAL AUDIT LOGS ============================= -->
+  <section class="admin-section">
+    <div class="admin-section__head">
+      <h2>SYSTEM AUDIT &amp; ACTIVITY LOGS</h2>
+    </div>
+
+    <div class="admin-table-wrap">
+      <table class="data-table audit-log-table" id="global-audit-table">
+        <thead>
+          <tr>
+            <th>TIMESTAMP</th>
+            <th>USER ID</th>
+            <th>ACTION CATEGORY</th>
+            <th>EVENT DETAILS</th>
+            <th>TARGET SYSTEM</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>14:05:22</td>
+            <td class="is-primary">ID-8842</td>
+            <td><span class="cat-session">SESSION</span></td>
+            <td>AUTHENTICATED SUCCESSFULLY</td>
+            <td>COMMAND CENTER</td>
+          </tr>
+          <tr>
+            <td>14:12:05</td>
+            <td class="is-primary">ID-8842</td>
+            <td><span class="cat-ai_control">AI_CONTROL</span></td>
+            <td>TOGGLED NIGHT VISION MODE</td>
+            <td>WATCHTOWER NORTH</td>
+          </tr>
+          <tr>
+            <td>13:47:11</td>
+            <td class="is-primary">ROOT</td>
+            <td><span class="cat-security">SECURITY</span></td>
+            <td>FORCED LOGOUT EXECUTED</td>
+            <td>ID-1193</td>
+          </tr>
+          <tr>
+            <td>13:21:05</td>
+            <td class="is-primary">ROOT</td>
+            <td><span class="cat-provision">PROVISION</span></td>
+            <td>CREATED NEW ACCOUNT</td>
+            <td>ID-4041</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="app-footer">Made with <span class="heart">❤️</span> by Team Nexus.</footer>
+
+  <!-- ============================= PROVISION MODAL ============================= -->
+  <div class="modal-overlay" id="provision-modal">
+    <form class="modal-card" id="provision-form">
+      <h3 class="modal-card__title">PROVISION NEW OPERATOR</h3>
+
+      <div class="field">
+        <label for="new-user-id">User ID</label>
+        <input type="text" id="new-user-id" placeholder="e.g. ID-2210" required />
+      </div>
+      <div class="field">
+        <label for="new-full-name">Full Name</label>
+        <input type="text" id="new-full-name" placeholder="e.g. Lieutenant A. Rao" required />
+      </div>
+      <div class="field">
+        <label for="new-clearance">CLEARANCE LEVEL</label>
+        <div class="field__input-wrap">
+          <select id="new-clearance" required>
+            <option value="USER" selected>USER</option>
+            <option value="ADMIN">ADMIN</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label for="new-password">Temporary Password</label>
+        <input type="password" id="new-password" placeholder="••••••••" required />
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="cancel-provision">CANCEL</button>
+        <button type="submit" class="btn-primary">PROVISION</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="toast-stack" id="toast-stack"></div>
+  <button class="help-fab" type="button" aria-label="Help">?</button>
+
+<script src="app.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    GarudaGuard.requireRole('admin', 'login.html');
+    GarudaAdmin.init();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GARUDA | Command Center</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-vision="original">
+  <header class="topbar">
+    <div class="nav-flag-accent"></div>
+
+    <div class="topbar__brand">
+      <img src="assets/garuda-logo.png" alt="GARUDA emblem" />
+      <span>GARUDA</span>
+    </div>
+
+    <div class="topbar__center">
+      <div class="btn-group" id="admin-nav-group" role="group" aria-label="Console navigation" style="display: none; margin-right: 15px;">
+        <button type="button" id="tab-admin-console" style="padding: 6px 10px; font-size: 11px; letter-spacing: 0.5px;">LAUNCH ADMIN CONSOLE</button>
+        <button type="button" class="is-active" id="tab-launch-dashboard" style="padding: 6px 10px; font-size: 11px; letter-spacing: 0.5px;">TACTICAL DASHBOARD</button>
+      </div>
+      <div class="topbar__divider"></div>
+      <div class="btn-group" id="grid-layout-group" role="group" aria-label="Camera grid layout">
+        <button type="button" data-layout="1x1">1×1</button>
+        <button type="button" data-layout="1x2">1×2</button>
+        <button type="button" data-layout="2x2" class="is-active">2×2</button>
+      </div>
+
+      
+    </div>
+
+    <div class="topbar__right">
+      <div class="identity-chip">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <strong id="user-name">LOADING...</strong>&nbsp;|&nbsp;<span id="user-id">---</span>
+      </div>
+      <button type="button" class="btn-logout" id="logout-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1 2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        LOG OUT
+      </button>
+    </div>
+  </header>
+
+  <style>
+    /* OVERRIDE OLD LAYOUT */
+    .dashboard__main { display: block !important; flex: 1 1 auto; overflow: hidden; }
+    
+    /* 1. RESTORED CSS GRID (Fixes Grid Toggles) */
+    .camera-grid {
+      display: grid; gap: 2px; background: #000; 
+      height: calc(100vh - 75px); /* Max height filling the screen */
+    }
+    
+    /* Grid Layout Modes */
+    .camera-grid[data-layout="1x1"] { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+    .camera-grid[data-layout="1x1"] .camera-cell:nth-child(n+2) { display: none; }
+    
+    .camera-grid[data-layout="1x2"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+    .camera-grid[data-layout="1x2"] .camera-cell:nth-child(n+3) { display: none; }
+    
+    .camera-grid[data-layout="2x2"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+    /* 2. CAMERA CELL & VIDEO */
+    .camera-cell { display: flex; flex-direction: column; background: #070b14; overflow: hidden; min-height: 0; }
+    .video-container { flex: 1 1 auto; position: relative; min-height: 0; background: #000; }
+    
+    /* 'cover' fills 100% of the box but keeps perfect aspect ratio */
+    .video-container video { width: 100%; height: 100%; object-fit: cover; background-color: #000; }
+    
+    /* 3. ALIGNED TITLE BAR & MATCHED BLUE COLOR */
+    .camera-meta-strip {
+      position: relative !important; 
+      width: 100%;
+      background: #3b42a4; /* Matches the GARUDA main topbar */
+      border-top: 1px solid rgba(255,255,255,0.2);
+      z-index: 10;
+    }
+    
+    /* 4. TACTICAL INCIDENT FEED (FIXED HEIGHT FOR PERFECT ALIGNMENT) */
+    .cam-incident-section {
+      background: #070b14; font-family: monospace; font-size: 11px; color: #a0aabf; 
+      flex-shrink: 0;
+      height: 125px; /* STRICT HEIGHT: Forces all videos and title bars to perfectly align */
+      display: flex;
+      flex-direction: column;
+    }
+    .cam-incident-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); background: #050810;
+    }
+    .cam-badge {
+      background: #111b4d; color: #fff; border: 1px solid #1a2a73;
+      padding: 2px 6px; border-radius: 2px; font-weight: bold;
+    }
+    .cam-badge[data-count="0"] { background: transparent; border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.4); }
+    
+    .cam-incident-list { 
+      flex: 1; /* Takes up remaining space inside the strict 125px box */
+      overflow-y: auto; 
+    }
+    
+    .cam-incident-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .cam-incident-row .title { color: #fff; font-weight: bold; flex: 1; }
+    .cam-incident-row .meta { margin-right: 15px; }
+    .cam-incident-row .btn-dismiss {
+      background: transparent; border: 1px solid rgba(255,255,255,0.2);
+      color: #a0aabf; padding: 4px 8px; cursor: pointer; font-family: inherit; font-size: 10px; transition: 0.2s;
+    }
+    .cam-incident-row .btn-dismiss:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .cam-incident-empty { padding: 12px; text-align: center; color: rgba(255,255,255,0.3); font-style: italic; }
+  </style>
+
+  <div class="dashboard__main">
+    <div class="camera-grid" id="camera-grid" data-layout="2x2">
+
+      <!-- CAM-01 -->
+      <div class="camera-cell" data-cam-id="CAM-01">
+        <div class="video-container">
+          <video autoplay loop muted playsinline poster="assets/india-flag-bg.jpeg"><source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4" /></video>
+        </div>
+        <div class="camera-meta-strip">
+          <span><span class="dot dot--live"></span> <strong>CAM-01: CHECKPOST SOUTH</strong></span>
+          <span>28.6139°N 77.2090°E &nbsp; <span class="cam-clock" data-cam-clock></span></span>
+        </div>
+        <div class="cam-incident-section">
+          <div class="cam-incident-header">
+            <span>CAM-01 &middot; INCIDENT FEED</span>
+            <span class="cam-badge" id="badge-CAM-01" data-count="1">1 ACTIVE</span>
+          </div>
+          <div class="cam-incident-list" id="feed-CAM-01">
+            <div class="cam-incident-row" data-incident-id="INC-1001">
+              <span class="title"><span class="dot dot--alert"></span> VEHICLE DETECTED</span>
+              <span class="meta">14:02:44 IST &nbsp;&nbsp; CONF: 92.4%</span>
+              <button class="btn-dismiss" data-dismiss>DISMISS</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CAM-02 -->
+      <div class="camera-cell" data-cam-id="CAM-02">
+        <div class="video-container">
+          <video autoplay loop muted playsinline poster="assets/india-flag-bg.jpeg"><source src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" type="video/mp4" /></video>
+        </div>
+        <div class="camera-meta-strip">
+          <span><span class="dot dot--live"></span> <strong>CAM-02: WATCHTOWER NORTH</strong></span>
+          <span>28.6200°N 77.2150°E &nbsp; <span class="cam-clock" data-cam-clock></span></span>
+        </div>
+        <div class="cam-incident-section">
+          <div class="cam-incident-header">
+            <span>CAM-02 &middot; INCIDENT FEED</span>
+            <span class="cam-badge" id="badge-CAM-02" data-count="2">2 ACTIVE</span>
+          </div>
+          <div class="cam-incident-list" id="feed-CAM-02">
+            <div class="cam-incident-row" data-incident-id="INC-1002">
+              <span class="title"><span class="dot dot--alert"></span> INTRUSION DETECTED</span>
+              <span class="meta">14:02:48 IST &nbsp;&nbsp; CONF: 96.8%</span>
+              <button class="btn-dismiss" data-dismiss>DISMISS</button>
+            </div>
+            <div class="cam-incident-row" data-incident-id="INC-1003">
+              <span class="title"><span class="dot dot--alert"></span> TRIPWIRE BREACH</span>
+              <span class="meta">13:58:01 IST &nbsp;&nbsp; CONF: 91.1%</span>
+              <button class="btn-dismiss" data-dismiss>DISMISS</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CAM-03 -->
+      <div class="camera-cell" data-cam-id="CAM-03">
+        <div class="video-container">
+          <video autoplay loop muted playsinline poster="assets/india-flag-bg.jpeg"><source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4" /></video>
+        </div>
+        <div class="camera-meta-strip">
+          <span><span class="dot dot--live"></span> <strong>CAM-03: PATROL GATE 02</strong></span>
+          <span>28.6100°N 77.2000°E &nbsp; <span class="cam-clock" data-cam-clock></span></span>
+        </div>
+        <div class="cam-incident-section">
+          <div class="cam-incident-header">
+            <span>CAM-03 &middot; INCIDENT FEED</span>
+            <span class="cam-badge" id="badge-CAM-03" data-count="1">1 ACTIVE</span>
+          </div>
+          <div class="cam-incident-list" id="feed-CAM-03">
+            <div class="cam-incident-row" data-incident-id="INC-1000">
+              <span class="title"><span class="dot dot--alert"></span> HUMAN DETECTED</span>
+              <span class="meta">13:47:22 IST &nbsp;&nbsp; CONF: 88.3%</span>
+              <button class="btn-dismiss" data-dismiss>DISMISS</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CAM-04 -->
+      <div class="camera-cell" data-cam-id="CAM-04">
+        <div class="video-container">
+          <video autoplay loop muted playsinline poster="assets/india-flag-bg.jpeg"><source src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" type="video/mp4" /></video>
+        </div>
+        <div class="camera-meta-strip">
+          <span><span class="dot dot--live"></span> <strong>CAM-04: FORWARD OBS POST 09</strong></span>
+          <span>28.6050°N 77.1980°E &nbsp; <span class="cam-clock" data-cam-clock></span></span>
+        </div>
+        <div class="cam-incident-section">
+          <div class="cam-incident-header">
+            <span>CAM-04 &middot; INCIDENT FEED</span>
+            <span class="cam-badge" id="badge-CAM-04" data-count="0">0 ACTIVE</span>
+          </div>
+          <div class="cam-incident-list" id="feed-CAM-04">
+            <div class="cam-incident-empty">NO ACTIVE INCIDENTS</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================= BOTTOM ANALYTICS TRAY ============================= -->
+  <div class="analytics-tray">
+    <section class="tray-panel">
+      <h3 class="tray-panel__title">24-HOUR THREAT FREQUENCY (ALERTS / HOUR)</h3>
+      <div class="chart-wrap" id="threat-chart"></div>
+    </section>
+
+    <section class="tray-panel">
+      <h3 class="tray-panel__title">AUDIT LOG</h3>
+      <div class="audit-table-wrap">
+        <table class="data-table" id="audit-log-table">
+          <thead>
+            <tr>
+              <th>TIMESTAMP</th>
+              <th>CAMERA</th>
+              <th>ENTITY TYPE</th>
+              <th>IDENTIFIER / OCR</th>
+              <th>CONFIDENCE</th>
+              <th>ACTION</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>14:02:44</td>
+              <td class="is-primary">CAM-02</td>
+              <td>Human Intruder</td>
+              <td class="is-primary">Face ID #8942</td>
+              <td>96.8%</td>
+              <td><span class="pill pill--action">ACTION REQUIRED</span></td>
+            </tr>
+            <tr>
+              <td>13:58:12</td>
+              <td class="is-primary">CAM-01</td>
+              <td>Vehicle</td>
+              <td class="is-primary">MP-09-AB-1234</td>
+              <td>94.1%</td>
+              <td><span class="pill pill--logged">LOGGED</span></td>
+            </tr>
+            <tr>
+              <td>13:12:05</td>
+              <td class="is-primary">CAM-03</td>
+              <td>Human (Patrol)</td>
+              <td class="is-primary">Officer Badge #102</td>
+              <td>99.2%</td>
+              <td><span class="pill pill--verified">VERIFIED</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <footer class="app-footer">Made with <span class="heart">❤️</span> by Team Nexus.</footer>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+<button class="help-fab" type="button" aria-label="Help">?</button>
+
+<script src="app.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    GarudaDashboard.init();
+  });
+</script>
+</body>
+</html>
