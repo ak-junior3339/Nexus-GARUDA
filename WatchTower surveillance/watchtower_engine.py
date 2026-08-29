@@ -31,6 +31,7 @@ BREACH_LOG_DIR = "WatchTower surveillance/breach_logs"
 PERSON_LOG_DIR = os.path.join(BREACH_LOG_DIR, "person")
 CAR_LOG_DIR = os.path.join(BREACH_LOG_DIR, "car")
 LOITER_LOG_DIR = os.path.join(BREACH_LOG_DIR, "loitering")
+GROUP_LOG_DIR = os.path.join(BREACH_LOG_DIR, "group_clustering")
 
 
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -38,6 +39,7 @@ os.makedirs(BREACH_LOG_DIR, exist_ok=True)
 os.makedirs(PERSON_LOG_DIR, exist_ok=True)
 os.makedirs(CAR_LOG_DIR, exist_ok=True)
 os.makedirs(LOITER_LOG_DIR, exist_ok=True)
+os.makedirs(GROUP_LOG_DIR, exist_ok=True)
 
 ALL_OBJECTS_CSV_LOG = os.path.join(LOG_DIR, "surveillance_log.csv")
 if not os.path.exists(ALL_OBJECTS_CSV_LOG):
@@ -222,6 +224,74 @@ class VirtualTripwireEngine:
         self.anchor_points = {}          
         self.LOITER_TIME_LIMIT = 20.0    
         self.LOITER_RADIUS = 150
+        # ---- GROUP CLUSTERING (multiple people converging) ----
+        # How close two people's center points must be (in pixels) to be
+        # considered "together" as part of the same cluster.
+        self.GROUP_CLUSTER_RADIUS = 120
+        # Minimum number of people in a cluster before it's flagged as a
+        # suspicious group convergence rather than just people passing by.
+        self.GROUP_MIN_PEOPLE = 3
+        # Group composition can shift frame-to-frame as people move in/out
+        # of the radius, so we cooldown the ALERT (not the visual tag) to
+        # avoid re-triggering the alarm/log every single frame for what is
+        # really one ongoing event.
+        self.GROUP_ALERT_COOLDOWN = 15.0
+        self.last_group_alert_time = 0.0
+    
+    def check_group_clustering(self, person_points):
+        """
+        Takes a list of (track_id, (cx, cy)) for every Person detected in
+        the current frame and groups nearby people using simple distance-
+        based clustering (union-find over pairwise distance). This is pure
+        point-distance math on data the tracker already gives us - no
+        extra model inference, so it doesn't add GPU/CPU load.
+ 
+        Returns:
+            grouped_track_ids (set): every track_id belonging to a cluster
+                that meets GROUP_MIN_PEOPLE, for quick "is this person in
+                a flagged group?" lookups while drawing.
+            qualifying_clusters (list of lists): each qualifying cluster's
+                member track_ids, for alerting/evidence snapshots.
+        """
+        n = len(person_points)
+        if n < self.GROUP_MIN_PEOPLE:
+            return set(), []
+ 
+        # Union-Find: start with every person as their own separate group,
+        # then merge any two people who are within GROUP_CLUSTER_RADIUS of
+        # each other into the same group.
+        parent = list(range(n))
+ 
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+ 
+        def union(i, j):
+            root_i, root_j = find(i), find(j)
+            if root_i != root_j:
+                parent[root_i] = root_j
+ 
+        for i in range(n):
+            for j in range(i + 1, n):
+                _, pt_i = person_points[i]
+                _, pt_j = person_points[j]
+                dist = math.hypot(pt_i[0] - pt_j[0], pt_i[1] - pt_j[1])
+                if dist <= self.GROUP_CLUSTER_RADIUS:
+                    union(i, j)
+ 
+        clusters_by_root = defaultdict(list)
+        for idx, (track_id, _) in enumerate(person_points):
+            clusters_by_root[find(idx)].append(track_id)
+ 
+        qualifying_clusters = [
+            members for members in clusters_by_root.values()
+            if len(members) >= self.GROUP_MIN_PEOPLE
+        ]
+        grouped_track_ids = {tid for cluster in qualifying_clusters for tid in cluster}
+        return grouped_track_ids, qualifying_clusters
+
     def check_breach(self, track_id, current_center_pt):
         # YOLO tracker assigns a unique track_id to every object 
         # (e.g., Person #4, Car #12), the system uses a dictionary to remember where 
@@ -340,6 +410,52 @@ def run_surveillance_pipeline():
             class_ids = results.boxes.cls.int().cpu().numpy()
             confs = results.boxes.conf.cpu().numpy()
 
+            # ---- GROUP CLUSTERING PRE-PASS ----
+            # Build person center-points from the boxes we already have
+            # (no extra detection call needed), then check for clusters.
+            person_points = [
+                (int(tid), ((int(box[0]) + int(box[2])) // 2, (int(box[1]) + int(box[3])) // 2))
+                for box, tid, cid in zip(boxes, track_ids, class_ids) if cid == 0
+            ]
+            grouped_track_ids, qualifying_clusters = tripwire_engine.check_group_clustering(person_points)
+ 
+            # Cluster size per track_id, used later to label each person
+            # with how many people are in their specific group.
+            cluster_size_by_track = {
+                tid: len(cluster) for cluster in qualifying_clusters for tid in cluster
+            }
+ 
+            if qualifying_clusters:
+                current_time = time.time()
+
+                if (current_time - tripwire_engine.last_group_alert_time) > tripwire_engine.GROUP_ALERT_COOLDOWN:
+                    tripwire_engine.last_group_alert_time = current_time
+                    largest_cluster = max(qualifying_clusters, key=len)
+ 
+                    tripwire_engine.trigger_alert(
+                        f"⚠️ GROUP CONVERGENCE: {len(largest_cluster)} people clustering together!",
+                        color=(255, 0, 255)
+                    )
+                   
+                    # Evidence snapshot: box every member of the largest
+                    # qualifying cluster on the clean (no-overlay) frame.
+                    group_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    group_filename = f"{GROUP_LOG_DIR}/group_{group_timestamp}.jpg"
+                    evidence_frame = clean_snapshot.copy()
+                    for box, tid, cid in zip(boxes, track_ids, class_ids):
+                        if cid == 0 and int(tid) in largest_cluster:
+                            gx1, gy1, gx2, gy2 = map(int, box)
+                            cv2.rectangle(evidence_frame, (gx1, gy1), (gx2, gy2), (255, 0, 255), 2)
+                    cv2.putText(evidence_frame, f"GROUP CONVERGENCE - {len(largest_cluster)} PEOPLE",
+                                (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+                    cv2.imwrite(group_filename, evidence_frame)
+ 
+                    log_event("Group Convergence", "Person",
+                              ",".join(str(t) for t in largest_cluster), 0.0,
+                              details=f"{len(largest_cluster)} people converged within {tripwire_engine.GROUP_CLUSTER_RADIUS}px",
+                              evidence_file=group_filename)
+                    print(f"👥 [GROUP CONVERGENCE LOGGED]: {group_filename}")
+
             for box, track_id, cls_id, conf in zip(boxes, track_ids, class_ids, confs):
                 x1, y1, x2, y2 = map(int, box)
                 center_x = (x1 + x2) // 2
@@ -388,6 +504,15 @@ def run_surveillance_pipeline():
                             print(f"📸 [PERSON LOGGED]: {filename}")
                             tripwire_engine.logged_intruders.add(track_id)
                     
+                    elif track_id in grouped_track_ids:
+                        # Not a breach or loitering on its own, but this
+                        # person is part of a cluster of GROUP_MIN_PEOPLE+
+                        # people standing close together - flagged as a
+                        # potential coordinated crossing attempt.
+                        box_color = (255, 0, 255) # Magenta
+                        group_size = cluster_size_by_track.get(track_id, 0)
+                        label = f"ID:{track_id} GROUP ({group_size} PEOPLE)"
+
                     elif is_loitering:
                         box_color = (0, 165, 255) # Orange
                         label = f"ID:{track_id} SUSPICIOUS ({duration:.0f}s)"
