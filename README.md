@@ -119,6 +119,6 @@ This repository follows a strict feature-branch workflow to maintain code integr
 * `ANPR` : ANPR integration branch featuring optimized frame skip logic and CSV logging.
 
 
-
+for mac and linux : source .venv/bin/activate
 python backend/main.py
 python -m http.server 5500
