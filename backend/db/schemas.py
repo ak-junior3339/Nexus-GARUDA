@@ -14,11 +14,10 @@ class UserBase(BaseModel):
     status: str
 
 class UserCreate(UserBase):
-    password: str  # The raw password from the frontend before hashing
+    password: str
 
 class UserResponse(UserBase):
     id: UUID
-    
     model_config = ConfigDict(from_attributes=True)
 
 # --------------------------
@@ -41,6 +40,7 @@ class IncidentCreate(BaseModel):
     identifier: Optional[str] = None
     confidence: float
     image_path: Optional[str] = None
+    image_data: Optional[str] = None  # Base64 image payload
 
 class IncidentResponse(BaseModel):
     id: UUID
@@ -50,6 +50,7 @@ class IncidentResponse(BaseModel):
     identifier: Optional[str]
     confidence: float
     image_path: Optional[str]
+    image_data: Optional[str]
     status: str
 
     model_config = ConfigDict(from_attributes=True)

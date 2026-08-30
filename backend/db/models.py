@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Float, DateTime, ForeignKey
+from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -36,10 +36,11 @@ class Incident(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     camera_id = Column(String(50), ForeignKey("cameras.id"), nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    entity_type = Column(String(50)) # Person, Vehicle, Animal
-    identifier = Column(String(100), nullable=True) # Face ID or ANPR Plate
+    entity_type = Column(String(50)) # Person Breach, Vehicle, Loitering, Group Convergence
+    identifier = Column(String(100), nullable=True) # Track ID or ANPR Plate
     confidence = Column(Float)
-    image_path = Column(String(255), nullable=True)
+    image_path = Column(String(255), nullable=True) # Local path on Mac
+    image_data = Column(Text, nullable=True)        # FULL BASE64 IMAGE STORED GLOBALLY IN DB
     status = Column(String(20), default="UNRESOLVED") # UNRESOLVED, DISMISSED
 
     # Relationships
@@ -49,7 +50,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True) # Nullable for system events
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
     action_category = Column(String(50)) # SESSION, AI_CONTROL, SECURITY, PROVISION
     event_details = Column(String(255))
