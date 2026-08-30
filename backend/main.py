@@ -116,9 +116,9 @@ def get_cameras(db: Session = Depends(get_db)):
     if not cams:
         return [
             {"id": "CAM-01", "name": "CHECKPOST ANPR", "coords": "28.6139°N 77.2090°E"},
-            {"id": "CAM-02", "name": "WATCHTOWER NORTH", "coords": "28.6200°N 77.2150°E"},
-            {"id": "CAM-03", "name": "PATROL GATE 02", "coords": "28.6100°N 77.2000°E"},
-            {"id": "CAM-04", "name": "FORWARD OBS POST 09", "coords": "28.6050°N 77.1980°E"},
+            {"id": "CAM-02", "name": "WATCHTOWER 01", "coords": "28.6200°N 77.2150°E"},
+            {"id": "CAM-03", "name": "WATCHTOWER 02", "coords": "28.6100°N 77.2000°E"},
+            {"id": "CAM-04", "name": "FaceCam", "coords": "28.6050°N 77.1980°E"},
         ]
     return cams
 
@@ -142,6 +142,20 @@ def toggle_night_mode():
 @app.get("/api/v1/incidents")
 def get_incidents(db: Session = Depends(get_db)):
     return crud.get_unresolved_incidents(db)
+
+@app.get("/api/v1/incidents/vault")
+def get_incident_vault(db: Session = Depends(get_db)):
+    """Fetch real-time breach photos stored in PostgreSQL."""
+    return db.query(models.Incident).filter(models.Incident.image_data.isnot(None))\
+             .order_by(models.Incident.timestamp.desc()).limit(100).all()
+
+@app.delete("/api/v1/incidents/{incident_id}")
+def delete_incident(incident_id: str, db: Session = Depends(get_db)):
+    """Admin endpoint to permanently delete a breach record & image from PostgreSQL."""
+    success = crud.delete_incident(db, incident_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return {"message": "Incident deleted successfully"}
 
 @app.get("/api/v1/admin/operators")
 def get_operators(db: Session = Depends(get_db)):

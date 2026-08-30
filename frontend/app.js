@@ -11,7 +11,7 @@
      GarudaSocket      -> WebSocket real-time alerts & Force-Logout listener
      GarudaToast       -> Military HUD notifications
      GarudaDashboard   -> Dashboard controller & telemetry metrics
-     GarudaAdmin       -> Admin operator provisioning & session control
+     GarudaAdmin       -> Admin operator provisioning, session control & Evidence Vault
      GarudaCameraViewer-> Active camera switcher, Night-mode toggle (Hot-key: N)
    ============================================================================ */
 
@@ -59,6 +59,12 @@ const GarudaAPI = {
   fetchIncidents(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return this._request(`/incidents${qs ? `?${qs}` : ''}`);
+  },
+  fetchEvidenceVault() {
+    return this._request('/incidents/vault');
+  },
+  deleteIncident(incidentId) {
+    return this._request(`/incidents/${incidentId}`, { method: 'DELETE' });
   },
   dismissIncident(incidentId) {
     return this._request(`/incidents/${incidentId}/dismiss`, { method: 'PATCH' });
@@ -330,7 +336,6 @@ const GarudaDashboard = {
     const list = document.getElementById('active-incident-list');
     const badge = document.getElementById('active-incident-count');
 
-    // Only display alert in list if it belongs to current active camera
     if (typeof GarudaCameraViewer !== 'undefined') {
       const currentCam = GarudaCameraViewer.cameras[GarudaCameraViewer.currentIndex];
       if (alert.cameraId && alert.cameraId !== currentCam) {
@@ -358,7 +363,6 @@ const GarudaDashboard = {
       badge.textContent = `${current + 1} ENTRIES`;
     }
 
-    // Suppress pop-up toast if it's marked as silent (e.g. routine ANPR plate logs)
     if (!alert.silent) {
       GarudaToast.show(`ALERT: ${alert.title} on ${alert.cameraId}`, alert.siren ? 'error' : 'default');
     }
@@ -366,9 +370,11 @@ const GarudaDashboard = {
 };
 
 /* ---------------------------------------------------------------------------
-   9. ADMIN CONTROLLER
+   9. ADMIN CONTROLLER (OPERATORS + EVIDENCE VAULT WITH DELETION)
    --------------------------------------------------------------------------- */
 const GarudaAdmin = {
+  currentInspectingId: null,
+
   init() {
     const session = GarudaAuthStore.getSession();
     if (!session || session.role !== 'admin') {
@@ -382,6 +388,7 @@ const GarudaAdmin = {
     this._bindOperatorActions();
     this._bindProvisionModal();
     this._loadOperators();
+    this.loadEvidenceVault();
   },
 
   async _loadOperators() {
@@ -396,6 +403,96 @@ const GarudaAdmin = {
       });
     } catch (err) {
       console.error('Failed to load operators:', err);
+    }
+  },
+
+  async loadEvidenceVault() {
+    const grid = document.getElementById('vault-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #64748b; font-family: var(--font-mono);">QUERYING DATABASE EVIDENCE PHOTOS...</div>';
+
+    try {
+      const res = await fetch(`${GarudaConfig.API_BASE_URL}/incidents/vault`);
+      if (!res.ok) throw new Error("Could not load evidence vault");
+      const incidents = await res.json();
+
+      if (!incidents || incidents.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: rgba(255,255,255,0.3); font-family: var(--font-mono);">NO EVIDENCE PHOTOS IN DATABASE YET.</div>';
+        return;
+      }
+
+      grid.innerHTML = '';
+      incidents.forEach((inc) => {
+        if (!inc.image_data) return;
+
+        const card = document.createElement('div');
+        card.className = 'vault-card';
+        card.dataset.incidentId = inc.id;
+
+        let badgeClass = 'vault-badge--breach';
+        if (inc.entity_type.includes('Group')) badgeClass = 'vault-badge--group';
+        if (inc.entity_type.includes('Loiter')) badgeClass = 'vault-badge--loiter';
+
+        const timestampStr = new Date(inc.timestamp).toLocaleString('en-IN', { hour12: false });
+
+        card.innerHTML = `
+          <div class="vault-img-wrap" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')">
+            <img src="${inc.image_data}" alt="${inc.entity_type}" loading="lazy" />
+          </div>
+          <div class="vault-meta">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="vault-badge ${badgeClass}">${inc.entity_type.toUpperCase()}</span>
+              <span style="color: #94a3b8;">${inc.camera_id}</span>
+            </div>
+            <strong style="color: #fff; font-size: 12px; margin-top: 4px;">${inc.identifier || 'UNKNOWN'}</strong>
+            <span style="color: #64748b; font-size: 10px;">${timestampStr} | CONF: ${(inc.confidence * 100).toFixed(0)}%</span>
+            <div class="vault-actions">
+              <button type="button" class="btn-mini" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; cursor: pointer;">INSPECT</button>
+              <button type="button" class="btn-mini btn-mini--danger" onclick="GarudaAdmin.deleteBreachImage('${inc.id}')" style="background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #ef4444; cursor: pointer;">DELETE</button>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+    } catch (err) {
+      grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #ef4444; font-family: var(--font-mono);">FAILED TO LOAD EVIDENCE: ${err.message}</div>`;
+    }
+  },
+
+  inspectImage(incidentId, imageData, title, meta) {
+    this.currentInspectingId = incidentId;
+    const modal = document.getElementById('image-inspect-modal');
+    const img = document.getElementById('modal-image-src');
+    const titleEl = document.getElementById('modal-image-title');
+    const metaEl = document.getElementById('modal-image-meta');
+    const delBtn = document.getElementById('modal-delete-btn');
+    if (!modal || !img) return;
+
+    img.src = imageData;
+    if (titleEl) titleEl.textContent = title;
+    if (metaEl) metaEl.textContent = `CAMERA: ${meta}`;
+    if (delBtn) {
+      delBtn.onclick = () => {
+        this.deleteBreachImage(incidentId);
+        modal.classList.remove('is-open');
+      };
+    }
+    modal.classList.add('is-open');
+  },
+
+  async deleteBreachImage(incidentId) {
+    const confirmed = window.confirm("Are you sure you want to delete this breach record & image permanently from the database?");
+    if (!confirmed) return;
+
+    try {
+      if (GarudaConfig.BACKEND_ENABLED) {
+        await GarudaAPI.deleteIncident(incidentId);
+      }
+      document.querySelector(`.vault-card[data-incident-id="${incidentId}"]`)?.remove();
+      GarudaToast.show("Breach record permanently deleted from database.", "success");
+    } catch (err) {
+      GarudaToast.show(`Delete failed: ${err.message}`, "error");
     }
   },
 
@@ -460,25 +557,45 @@ const GarudaAdmin = {
     const openBtn = document.getElementById('open-provision-modal');
     const cancelBtn = document.getElementById('cancel-provision');
     const form = document.getElementById('provision-form');
-    if (!overlay || !openBtn || !form) return;
 
-    openBtn.addEventListener('click', () => overlay.classList.add('is-open'));
-    cancelBtn.addEventListener('click', () => { overlay.classList.remove('is-open'); form.reset(); });
+    if (!overlay || !openBtn || !form) {
+      console.warn('[GarudaAdmin] Provision modal elements not found');
+      return;
+    }
 
-    form.addEventListener('submit', async (e) => {
+    openBtn.onclick = (e) => {
+      e.preventDefault();
+      overlay.classList.add('is-open');
+    };
+
+    if (cancelBtn) {
+      cancelBtn.onclick = (e) => {
+        e.preventDefault();
+        overlay.classList.remove('is-open');
+        form.reset();
+      };
+    }
+
+    form.onsubmit = async (e) => {
       e.preventDefault();
       const clearanceVal = document.getElementById('new-clearance').value;
+      const userIdVal = document.getElementById('new-user-id').value.trim();
+      const fullNameVal = document.getElementById('new-full-name').value.trim();
+      const passwordVal = document.getElementById('new-password').value;
+
       const payload = {
-        user_id: document.getElementById('new-user-id').value.trim(),
-        full_name: document.getElementById('new-full-name').value.trim(),
+        user_id: userIdVal,
+        full_name: fullNameVal,
         clearance_level: clearanceVal,
-        password: document.getElementById('new-password').value,
-        role: clearanceVal === 'ADMIN' ? 'admin' : 'user',
+        password: passwordVal,
+        role: clearanceVal.toLowerCase().includes('admin') ? 'admin' : 'user',
         status: 'offline',
       };
 
       try {
-        if (GarudaConfig.BACKEND_ENABLED) await GarudaAPI.provisionUser(payload);
+        if (GarudaConfig.BACKEND_ENABLED) {
+          await GarudaAPI.provisionUser(payload);
+        }
         this._appendOperatorRow(payload);
         GarudaToast.show(`Operator ${payload.user_id} provisioned.`, 'success');
         overlay.classList.remove('is-open');
@@ -486,7 +603,7 @@ const GarudaAdmin = {
       } catch (err) {
         GarudaToast.show(`Provisioning failed: ${err.message}`, 'error');
       }
-    });
+    };
   },
 
   _appendOperatorRow({ user_id, full_name, clearance_level, status = 'offline' }) {
@@ -500,12 +617,12 @@ const GarudaAdmin = {
       : '<span class="status-flag status-flag--offline"><span class="dot dot--offline"></span>OFFLINE</span>';
 
     row.innerHTML = `
-      <td>${statusHtml}</td>
-      <td class="is-primary">${user_id}</td>
-      <td class="is-primary">${full_name.toUpperCase()}</td>
-      <td>${clearance_level}</td>
-      <td>
-        <button type="button" class="btn-mini" data-action="force-logout" ${status === 'offline' ? 'disabled' : ''}>FORCE LOGOUT</button>
+      <td style="padding: 10px 14px;">${statusHtml}</td>
+      <td style="padding: 10px 14px; color: #fff; font-weight: bold;">${user_id}</td>
+      <td style="padding: 10px 14px; color: #818cf8;">${full_name.toUpperCase()}</td>
+      <td style="padding: 10px 14px; color: #94a3b8;">${clearance_level}</td>
+      <td style="padding: 10px 14px;">
+        <button type="button" class="btn-mini" data-action="force-logout" ${status === 'offline' ? 'disabled' : ''} style="margin-right: 6px;">FORCE LOGOUT</button>
         <button type="button" class="btn-mini btn-mini--danger" data-action="delete-account">DELETE ACCOUNT</button>
       </td>`;
     tbody.appendChild(row);
@@ -520,7 +637,7 @@ const GarudaCameraViewer = {
   cameraNames: {
     'CAM-01': 'CHECKPOST ANPR SECTOR',
     'CAM-02': 'WATCHTOWER NORTH PERIMETER',
-    'CAM-03': 'PATROL GATE 02 (WEBCAM)',
+    'CAM-03': 'PATROL GATE 02',
     'CAM-04': 'FORWARD OBS POST 09'
   },
   cameraCoords: {
@@ -631,10 +748,8 @@ const GarudaCameraViewer = {
 
     if (overlay) overlay.style.display = 'none';
 
-    // 1. Instantly silence siren on camera switch
     fetch(`${GarudaConfig.API_BASE_URL}/cameras/silence`, { method: 'POST' }).catch(() => {});
 
-    // 2. Connect to the active camera stream
     if (streamImg) {
       streamImg.src = `${GarudaConfig.API_BASE_URL}/cameras/${camId}/stream?t=${Date.now()}`;
     }
@@ -644,7 +759,6 @@ const GarudaCameraViewer = {
     if (headerEl) headerEl.textContent = `${camId} · SURVEILLANCE & THREAT TELEMETRY LOG`;
     if (coordsEl && this.cameraCoords[camId]) coordsEl.textContent = this.cameraCoords[camId];
 
-    // Clear incident feed for new camera
     const incidentList = document.getElementById('active-incident-list');
     const incidentCount = document.getElementById('active-incident-count');
     if (incidentList) {
@@ -655,7 +769,6 @@ const GarudaCameraViewer = {
       incidentCount.textContent = '0 ENTRIES';
     }
 
-    // Update Chips
     const container = document.getElementById('cam-selector-tray') || document.getElementById('cam-indicators');
     if (container) {
       const chips = container.querySelectorAll('.cam-chip, button');
@@ -665,9 +778,7 @@ const GarudaCameraViewer = {
       });
     }
 
-    // Refresh Night mode button visibility
     this._updateNightVisionUI();
-
     console.info(`[GarudaViewer] Switched active camera to ${camId}`);
   },
 

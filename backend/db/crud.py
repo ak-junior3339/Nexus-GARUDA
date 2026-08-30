@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from . import models, schemas
 from passlib.context import CryptContext
+from uuid import UUID
 
 # Password hashing configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -33,7 +34,7 @@ def create_user(db: Session, user: schemas.UserCreate):
     return db_user
 
 def update_user_status(db: Session, user_id: str, new_status: str):
-    """Update online/offline status (e.g., when forced logged out)."""
+    """Update online/offline status."""
     user = get_user_by_user_id(db, user_id)
     if user:
         user.status = new_status
@@ -54,20 +55,21 @@ def delete_user(db: Session, user_id: str):
 # CAMERA OPERATIONS
 # ==========================================
 def get_cameras(db: Session):
-    """Fetch grid for the dashboard."""
+    """Fetch all cameras."""
     return db.query(models.Camera).all()
 
 # ==========================================
-# INCIDENT (ALERT) OPERATIONS
+# INCIDENT (ALERT & EVIDENCE) OPERATIONS
 # ==========================================
 def create_incident(db: Session, incident: schemas.IncidentCreate):
-    """Log an AI threat detection into the database."""
+    """Log an AI threat detection & evidence image directly into the database."""
     db_incident = models.Incident(
         camera_id=incident.camera_id,
         entity_type=incident.entity_type,
         identifier=incident.identifier,
         confidence=incident.confidence,
         image_path=incident.image_path,
+        image_data=incident.image_data,
         status="UNRESOLVED"
     )
     db.add(db_incident)
@@ -76,7 +78,7 @@ def create_incident(db: Session, incident: schemas.IncidentCreate):
     return db_incident
 
 def get_unresolved_incidents(db: Session):
-    """Fetch active alerts for the right sidebar."""
+    """Fetch active alerts."""
     return db.query(models.Incident).filter(models.Incident.status == "UNRESOLVED").order_by(models.Incident.timestamp.desc()).all()
 
 def dismiss_incident(db: Session, incident_id: str):
@@ -87,6 +89,26 @@ def dismiss_incident(db: Session, incident_id: str):
         db.commit()
         db.refresh(incident)
     return incident
+
+def delete_incident(db: Session, incident_id: str):
+    """Permanently delete an incident & evidence from the PostgreSQL database."""
+    try:
+        query = db.query(models.Incident)
+        try:
+            # Handle UUID vs String
+            uid = UUID(incident_id) if isinstance(incident_id, str) else incident_id
+            incident = query.filter(models.Incident.id == uid).first()
+        except ValueError:
+            incident = query.filter(models.Incident.id == incident_id).first()
+
+        if incident:
+            db.delete(incident)
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        print(f"Error deleting incident: {e}")
+        return False
 
 # ==========================================
 # AUDIT LOG OPERATIONS
@@ -103,7 +125,3 @@ def create_audit_log(db: Session, log: schemas.AuditLogCreate):
     db.commit()
     db.refresh(db_log)
     return db_log
-
-def get_audit_logs(db: Session, limit: int = 50):
-    """Fetch logs for the Admin Dashboard."""
-    return db.query(models.AuditLog).order_by(models.AuditLog.timestamp.desc()).limit(limit).all()
