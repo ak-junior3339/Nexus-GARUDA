@@ -6,7 +6,77 @@
   <title>GARUDA | Admin Console</title>
   <link rel="stylesheet" href="styles.css" />
   <style>
-    /* Evidence Vault Grid Styles */
+    /* View Switcher Controls */
+    .view-toggle-group {
+      display: inline-flex;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-left: 12px;
+    }
+    .view-toggle-btn {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      padding: 5px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .view-toggle-btn.is-active {
+      background: #3b42a4;
+      color: #fff;
+      font-weight: bold;
+    }
+
+    /* Tabular Evidence Dossier View */
+    .dossier-table-wrap {
+      background: #0a0f1d;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 14px;
+    }
+    .dossier-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+    }
+    .dossier-table th {
+      background: #04060c;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 11px;
+      color: #94a3b8;
+      text-align: left;
+      padding: 10px 14px;
+    }
+    .dossier-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 12px;
+      color: #e2e8f0;
+      vertical-align: middle;
+    }
+    .dossier-table tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .dossier-thumb {
+      width: 64px;
+      height: 40px;
+      border-radius: 3px;
+      object-fit: cover;
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      transition: transform 0.2s;
+    }
+    .dossier-thumb:hover {
+      transform: scale(1.15);
+      border-color: #818cf8;
+    }
+
+    /* Card Gallery View */
     .vault-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
@@ -55,6 +125,8 @@
       padding-top: 8px;
       border-top: 1px solid rgba(255, 255, 255, 0.08);
     }
+
+    /* Threat Badges */
     .vault-badge {
       display: inline-block;
       padding: 2px 6px;
@@ -71,6 +143,8 @@
       display: none;
       position: fixed;
       inset: 0;
+      width: 100vw;
+      height: 100vh;
       background: rgba(0, 0, 0, 0.88);
       z-index: 9999;
       align-items: center;
@@ -83,8 +157,9 @@
       background: #0c1222;
       border: 1px solid #3b42a4;
       border-radius: 4px;
-      max-width: 900px;
+      max-width: 920px;
       width: 100%;
+      margin: auto;
       overflow: hidden;
       box-shadow: 0 20px 50px rgba(0,0,0,0.8);
       font-family: var(--font-mono);
@@ -110,7 +185,7 @@
       object-fit: contain;
     }
     .image-modal-footer {
-      padding: 10px 16px;
+      padding: 12px 18px;
       background: #04060d;
       display: flex;
       justify-content: space-between;
@@ -120,19 +195,31 @@
       color: #94a3b8;
     }
 
-    /* Modal Overlay */
+    /* Modal Overlay (Centered) */
     .modal-overlay {
       display: none;
       position: fixed;
-      inset: 0;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
       background: rgba(0, 0, 0, 0.85);
       z-index: 9999;
       align-items: center;
       justify-content: center;
-      backdrop-filter: blur(4px);
+      backdrop-filter: blur(6px);
     }
     .modal-overlay.is-open {
       display: flex !important;
+    }
+    .modal-card {
+      margin: auto;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
+      animation: modalFadeIn 0.2s ease;
+    }
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
     }
   </style>
 </head>
@@ -147,7 +234,7 @@
     <div class="topbar__center">
       <div class="btn-group" role="group" aria-label="Console navigation">
         <button type="button" class="is-active" id="tab-admin-console">ADMIN CONSOLE</button>
-        <button type="button" id="tab-launch-dashboard">LAUNCH TACTICAL DASHBOARD</button>
+        <button type="button" id="tab-launch-dashboard">LAUNCH OPERATOR DASHBOARD</button>
       </div>
     </div>
 
@@ -190,15 +277,44 @@
       </div>
     </section>
 
-    <!-- ============================= TACTICAL EVIDENCE VAULT ============================= -->
+    <!-- ============================= UNIFIED THREAT LOGS & EVIDENCE VAULT ============================= -->
     <section class="admin-section" style="margin-top: 36px;">
       <div class="admin-section__head" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h2 style="font-family: var(--font-mono); font-size: 16px;">EVIDENCE &amp; BREACH IMAGE LIBRARY</h2>
-        <button type="button" class="btn-mini" onclick="GarudaAdmin.loadEvidenceVault()" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); padding: 4px 10px; font-family: var(--font-mono); color: #fff; cursor: pointer;">↻ REFRESH VAULT</button>
+        <div style="display: flex; align-items: center;">
+          <h2 style="font-family: var(--font-mono); font-size: 16px;">INCIDENT &amp; BREACH LOG</h2>
+          <div class="view-toggle-group">
+            <button type="button" class="view-toggle-btn is-active" id="view-table-btn" onclick="GarudaAdmin.switchVaultView('table')">BREACH LOGS + IMAGES</button>
+            <button type="button" class="view-toggle-btn" id="view-gallery-btn" onclick="GarudaAdmin.switchVaultView('gallery')">BREACH IMAGE GALLERY</button>
+          </div>
+        </div>
+        <button type="button" class="btn-mini" onclick="GarudaAdmin.loadEvidenceVault()" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); padding: 4px 10px; font-family: var(--font-mono); color: #fff; cursor: pointer;">↻ REFRESH </button>
       </div>
 
-      <div class="vault-grid" id="vault-grid">
-        <div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #64748b; font-family: var(--font-mono);">QUERYING DATABASE EVIDENCE PHOTOS...</div>
+      <!-- View 1: Unified Table Dossier View -->
+      <div class="dossier-table-wrap" id="dossier-table-container">
+        <table class="dossier-table" id="dossier-table">
+          <thead>
+            <tr>
+              <th>EVIDENCE</th>
+              <th>THREAT CATEGORY</th>
+              <th>TARGET IDENTIFIER</th>
+              <th>CAMERA SECTOR</th>
+              <th>TIMESTAMP (IST)</th>
+              <th>CONFIDENCE</th>
+              <th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="dossier-table-body">
+            <tr>
+              <td colspan="7" style="text-align: center; color: #64748b; padding: 30px;">FETCHING LOGS FROM DATABASE...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- View 2: Card Gallery View -->
+      <div class="vault-grid" id="vault-grid" style="display: none;">
+        <div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #64748b; font-family: var(--font-mono);">FETCHING LOGS FROM DATABASE...</div>
       </div>
     </section>
 
@@ -216,23 +332,23 @@
       </div>
       <div class="image-modal-footer">
         <span id="modal-image-meta">CAMERA INFO</span>
-        <button type="button" class="btn-mini btn-mini--danger" id="modal-delete-btn" style="background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #ef4444; padding: 4px 10px; cursor: pointer;">DELETE RECORD FROM DATABASE</button>
+        <button type="button" class="btn-mini btn-mini--danger" id="modal-delete-btn" style="background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #ef4444; padding: 6px 14px; cursor: pointer; font-family: var(--font-mono);">DELETE RECORD FROM DATABASE</button>
       </div>
     </div>
   </div>
 
-  <!-- ============================= PROVISION OPERATOR MODAL (ORIGINAL UI) ============================= -->
+  <!-- ============================= PROVISION OPERATOR MODAL (CENTER-ALIGNED) ============================= -->
   <div class="modal-overlay" id="provision-modal">
     <div class="modal-card" style="background: #0a0f1d; border: 1px solid #3b42a4; padding: 24px; max-width: 440px; width: 100%; border-radius: 4px; font-family: var(--font-mono);">
-      <h3 style="margin-bottom: 16px; color: #fff; font-size: 15px; font-weight: bold;">ADD NEW OPERATOR</h3>
+      <h3 style="margin-bottom: 16px; color: #fff; font-size: 15px; font-weight: bold; text-align: left;">PROVISION NEW OPERATOR</h3>
       <form id="provision-form" style="display: flex; flex-direction: column; gap: 14px;">
         <div>
           <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">USER ID</label>
-          <input type="text" id="new-user-id" placeholder="ID-001" required style="width: 100%; padding: 8px; background: #04060d; border: 1px solid rgba(255,255,255,0.2); color: #fff; font-family: var(--font-mono); box-sizing: border-box;" />
+          <input type="text" id="new-user-id" placeholder="ID-0007" required style="width: 100%; padding: 8px; background: #04060d; border: 1px solid rgba(255,255,255,0.2); color: #fff; font-family: var(--font-mono); box-sizing: border-box;" />
         </div>
         <div>
           <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">FULL NAME</label>
-          <input type="text" id="new-full-name" placeholder="Your Name" required style="width: 100%; padding: 8px; background: #04060d; border: 1px solid rgba(255,255,255,0.2); color: #fff; font-family: var(--font-mono); box-sizing: border-box;" />
+          <input type="text" id="new-full-name" placeholder="ENTER NAME" required style="width: 100%; padding: 8px; background: #04060d; border: 1px solid rgba(255,255,255,0.2); color: #fff; font-family: var(--font-mono); box-sizing: border-box;" />
         </div>
         <div>
           <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">ROLE</label>
@@ -247,9 +363,11 @@
         </div>
         <div style="display: flex; gap: 10px; margin-top: 12px;">
           <button type="submit" class="btn-primary" style="flex: 1; padding: 10px; background: #3b42a4; color: #fff; border: 1px solid #818cf8; cursor: pointer; font-family: var(--font-mono); font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center;">
-            ADD
+            PROVISION
           </button>
-          <button type="button" id="cancel-provision" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; font-family: var(--font-mono);">CANCEL</button>
+          <button type="button" id="cancel-provision" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; font-family: var(--font-mono); text-align: center; display: flex; align-items: center; justify-content: center;">
+            CANCEL
+          </button>
         </div>
       </form>
     </div>
