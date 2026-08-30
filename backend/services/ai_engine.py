@@ -5,7 +5,8 @@ Combines:
   1. WatchTower YOLO11s Threat Analytics (Intrusions, Loitering, Group Clusters)
   2. Automatic CLAHE Night Vision Enhancement + Emergency 'N' Hotkey Override
   3. Audio Siren & Evidence Snapshot Logging (with Instant Silence Control)
-  4. Checkpost ANPR (Strict len > 4 + Alphanumeric Filter + clean_plate)
+  4. Checkpost ANPR (FRAME_SKIP = 3, is_same_plate, merge_plate_reads)
+  5. Centralized Root Parent Folder Logging: /Nexus-Garuda/Logs/
 ==============================================================================
 """
 
@@ -35,23 +36,27 @@ class GarudaIntegratedAIEngine:
         self.base_dir = base_dir
 
         # -------------------------------------------------------------
-        # 1. DIRECTORY & PATH DEFINITIONS
+        # 1. DIRECTORY & PATH DEFINITIONS (CENTRALIZED IN PARENT /Logs)
         # -------------------------------------------------------------
         self.WT_MODEL_PATH = os.path.join(base_dir, "WatchTower surveillance", "WTbest.pt")
         self.ANPR_MODEL_PATH = os.path.join(base_dir, "ANPR", "Model", "anprbest.pt")
         self.ALARM_PATH = os.path.join(base_dir, "WatchTower surveillance", "Alert", "alarm.wav")
 
-        self.LOG_DIR = os.path.join(base_dir, "WatchTower surveillance", "Logs")
-        self.BREACH_LOG_DIR = os.path.join(base_dir, "WatchTower surveillance", "breach_logs")
+        # Parent directory Logs folder
+        self.PARENT_LOG_DIR = os.path.join(base_dir, "Logs")
+        self.BREACH_LOG_DIR = os.path.join(self.PARENT_LOG_DIR, "breach_logs")
         self.PERSON_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "person")
         self.CAR_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "car")
         self.LOITER_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "loitering")
         self.GROUP_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "group_clustering")
 
-        for d in [self.LOG_DIR, self.BREACH_LOG_DIR, self.PERSON_LOG_DIR, self.CAR_LOG_DIR, self.LOITER_LOG_DIR, self.GROUP_LOG_DIR]:
+        for d in [self.PARENT_LOG_DIR, self.BREACH_LOG_DIR, self.PERSON_LOG_DIR, self.CAR_LOG_DIR, self.LOITER_LOG_DIR, self.GROUP_LOG_DIR]:
             os.makedirs(d, exist_ok=True)
 
-        self.ALL_OBJECTS_CSV_LOG = os.path.join(self.LOG_DIR, "surveillance_log.csv")
+        # Centralized CSV log files in parent /Logs
+        self.ALL_OBJECTS_CSV_LOG = os.path.join(self.PARENT_LOG_DIR, "surveillance_log.csv")
+        self.ANPR_DETECTION_CSV = os.path.join(self.PARENT_LOG_DIR, "detection.csv")
+
         if not os.path.exists(self.ALL_OBJECTS_CSV_LOG):
             with open(self.ALL_OBJECTS_CSV_LOG, "w", newline="") as f:
                 csv.writer(f).writerow(["timestamp", "event_type", "object_type", "track_id", "confidence", "details", "evidence_file"])
@@ -106,7 +111,7 @@ class GarudaIntegratedAIEngine:
                     print(f"❌ EasyOCR failed to load: {e2}")
 
         # -------------------------------------------------------------
-        # 5. WATCHTOWER & ANPR THREAT STATE
+        # 5. STATE MANAGEMENT
         # -------------------------------------------------------------
         self.trajectory_history = defaultdict(list)
         self.anchor_points = {}
@@ -114,11 +119,10 @@ class GarudaIntegratedAIEngine:
         self.logged_intruders = set()
         self.logged_vehicles = set()
         self.logged_loiterers = set()
-        self.anpr_seen_cooldown = {} # Plate -> (timestamp, best_conf)
 
         self.LOITER_TIME_LIMIT = 20.0
         self.LOITER_RADIUS = 150
-        self.GROUP_CLUSTER_RADIUS = 120
+        self.GROUP_CLUSTER_RADIUS = 150
         self.GROUP_MIN_PEOPLE = 3
         self.GROUP_ALERT_COOLDOWN = 15.0
         self.last_group_alert_time = 0.0
@@ -127,6 +131,17 @@ class GarudaIntegratedAIEngine:
         self.frame_index = 0
         self.AUTO_NIGHT_MODE = True
         self.NIGHT_MODE_ENABLED = False
+
+        # ANPR Specific State (From anpr_engine.py)
+        self.FRAME_SKIP = 2
+        self.MIN_PLATE_LENGTH = 4
+        self.DETECTION_CONF_THRESHOLD = 0.40
+        self.OCR_CONF_THRESHOLD = 0.40
+        self.anpr_frame_count = 0
+        self.anpr_last_box = None
+        self.anpr_last_display_str = None
+        self.anpr_all_reads = [] # [(frame_count, timestamp_sec, plate_text, ocr_confidence)]
+        self.anpr_seen_cooldown = {} # plate_text -> (timestamp, best_conf)
 
         # Configurable tripwires (per camera)
         self.tripwire_lines = {
@@ -428,101 +443,180 @@ class GarudaIntegratedAIEngine:
             return raw_frame, []
 
     # -----------------------------------------------------------------
-    # MAIN ANPR PROCESSING (STRICT LEN > 4 + ALPHANUMERIC FILTER)
+    # 3 ESSENTIAL ANPR ENGINE CORE FUNCTIONS (FROM anpr_engine.py)
     # -----------------------------------------------------------------
     def clean_plate(self, text):
         """
         Normalize raw OCR output into a plate-like string.
         - Uppercase everything.
         - Strip out ANY character that is not A-Z or 0-9.
-        - Remove a leading 'IND' / 'IN' / 'I' watermark.
+        - Remove leading 'IND' / 'IN' / 'I' watermark.
         """
         text = text.upper().strip()
         text = re.sub(r'[^A-Z0-9]', '', text)
         text = re.sub(r'^(?:IND|IN|I)', '', text)
         return text
 
-    def is_valid_alphanumeric_plate(self, text):
+    def is_same_plate(self, a, b):
         """
-        Alphanumeric Filter:
-        1. Length MUST be strictly greater than 4 characters (len > 4).
-        2. MUST contain at least one letter (A-Z) AND at least one digit (0-9).
-        3. Rejects pure words or pure numbers.
+        Exact-match duplicate check: two reads are considered the same plate
+        only if their cleaned text is identical.
         """
-        if len(text) <= 4:
-            return False
+        return a == b
 
+    def merge_plate_reads(self, reads):
+        """
+        Takes collected (frame, timestamp_sec, plate_text, ocr_confidence) tuples:
+          1. Keeps only reads longer than MIN_PLATE_LENGTH characters (> 4).
+          2. Removes exact duplicates, keeping the highest-confidence read
+             for each distinct plate text.
+        Returns a list of (frame, timestamp_sec, plate_text) for final export.
+        """
+        best_by_text = {}
+        order = []
+
+        for frame_num, ts, text, conf in reads:
+            if len(text) <= self.MIN_PLATE_LENGTH:
+                continue
+
+            if text not in best_by_text:
+                best_by_text[text] = (frame_num, ts, text, conf)
+                order.append(text)
+            else:
+                _, _, _, best_conf = best_by_text[text]
+                if conf > best_conf:
+                    best_by_text[text] = (frame_num, ts, text, conf)
+
+        return [(best_by_text[t][0], best_by_text[t][1], best_by_text[t][2]) for t in order]
+
+    def export_final_anpr_summary(self):
+        """
+        Writes the merged best-of-session reads to /Logs/detection.csv in the parent directory.
+        """
+        if not self.anpr_all_reads:
+            return
+        merged = self.merge_plate_reads(self.anpr_all_reads)
+        with open(self.ANPR_DETECTION_CSV, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["frame", "timestamp_sec", "plate_text"])
+            for frame_num, ts, text in merged:
+                writer.writerow([frame_num, f"{ts:.2f}", text])
+        print(f"📊 [ANPR EXPORT] Saved {len(merged)} unique merged plates to: {self.ANPR_DETECTION_CSV}")
+
+    def is_valid_alphanumeric_plate(self, text):
+        """Strict alphanumeric rule: length > 4 AND contains both letters & digits."""
+        if len(text) <= self.MIN_PLATE_LENGTH:
+            return False
         has_letter = any(c.isalpha() for c in text)
         has_digit = any(c.isdigit() for c in text)
-        if not (has_letter and has_digit):
-            return False
+        return bool(has_letter and has_digit)
 
-        return True
+    def draw_overlay(self, frame, box, display_str):
+        """Draws the bounding box and label text onto the frame in place."""
+        x1, y1, x2, y2 = box
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(frame, display_str, (x1, max(30, y1 - 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
+    # -----------------------------------------------------------------
+    # MAIN ANPR PROCESSING (WITH FRAME_SKIP = 3 & DEDUPLICATION)
+    # -----------------------------------------------------------------
     def process_anpr_frame(self, frame, camera_id="CAM-01"):
         try:
             h, w = frame.shape[:2]
             ws_alerts = []
-            
-            # Detection threshold 0.40
-            results = self.anpr_model(frame, conf=0.40, verbose=False)[0]
+            self.anpr_frame_count += 1
+            fps = 30.0
 
-            if results.boxes is not None and len(results.boxes) > 0:
-                for box in results.boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                    det_conf = float(box.conf[0].item())
+            # ---------------------------------------------------------
+            # FEATURE 1: FRAME_SKIP = 3 (Redraw cached box on skipped frames)
+            # ---------------------------------------------------------
+            if self.anpr_frame_count % self.FRAME_SKIP != 0:
+                if self.anpr_last_box is not None:
+                    self.draw_overlay(frame, self.anpr_last_box, self.anpr_last_display_str)
 
-                    plate_crop = frame[y1:y2, x1:x2]
-                    plate_text = ""
-                    best_ocr_conf = 0.0
+                cv2.rectangle(frame, (0, 0), (w, 32), (20, 20, 20), -1)
+                cv2.putText(frame, "GARUDA ANPR CHECKPOST SYSTEM | ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+                return frame, []
 
-                    if self.reader and plate_crop.size > 0:
-                        if plate_crop.shape[1] < 200 and plate_crop.shape[1] > 0:
-                            scale = 200 / plate_crop.shape[1]
-                            plate_crop = cv2.resize(plate_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-                        gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+            # ---------------------------------------------------------
+            # RUN YOLO + OCR ON EVERY 3RD FRAME
+            # ---------------------------------------------------------
+            results = self.anpr_model(frame, conf=self.DETECTION_CONF_THRESHOLD, verbose=False)[0]
+            boxes = results.boxes
 
-                        ocr_res = self.reader.readtext(gray)
-                        for (_, raw_text, ocr_conf) in ocr_res:
-                            # Acceptance threshold >= 0.40
-                            if ocr_conf >= 0.40:
-                                cleaned = self.clean_plate(raw_text)
+            if boxes is not None and len(boxes) > 0:
+                best_idx = int(boxes.conf.argmax())
+                best_box = boxes[best_idx]
+                x1, y1, x2, y2 = map(int, best_box.xyxy[0])
+                det_conf = float(best_box.conf[0].item())
 
-                                # Alphanumeric gate (strictly len > 4 AND digits + letters)
-                                if self.is_valid_alphanumeric_plate(cleaned):
-                                    plate_text = cleaned
-                                    best_ocr_conf = ocr_conf
-                                    break
+                # Clamp to frame boundaries
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(w, x2), min(h, y2)
 
-                    if plate_text:
-                        display_label = f"PLATE: {plate_text} ({best_ocr_conf * 100:.0f}%)"
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        cv2.putText(frame, display_label, (x1, max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
+                plate_crop = frame[y1:y2, x1:x2]
+                plate_text = None
+                ocr_confidence = 0.0
+                display_str = "Plate Detected"
 
-                        now = time.time()
-                        last_logged_time, last_best_conf = self.anpr_seen_cooldown.get(plate_text, (0, 0.0))
+                if self.reader and plate_crop.size > 0:
+                    if plate_crop.shape[1] < 200 and plate_crop.shape[1] > 0:
+                        scale = 200 / plate_crop.shape[1]
+                        plate_crop = cv2.resize(plate_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                    gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
 
-                        # Log if new plate, higher confidence, or after 5s video loop
-                        if (now - last_logged_time > 5.0) or (best_ocr_conf > last_best_conf + 0.15):
-                            self.anpr_seen_cooldown[plate_text] = (now, best_ocr_conf)
-                            self.log_event("ANPR Detection", "Vehicle Plate", plate_text, best_ocr_conf, details=f"Cleaned Read: {plate_text}")
-                            
-                            ws_alerts.append({
-                                "id": f"INC-{int(now * 1000)}",
-                                "title": f"LICENSE PLATE: {plate_text}",
-                                "cameraId": camera_id,
-                                "confidence": f"{best_ocr_conf * 100:.1f}%",
-                                "time": datetime.now().strftime("%H:%M:%S IST"),
-                                "siren": False,
-                                "silent": True
-                            })
-                            print(f"🚗 [ANPR STRICT ALPHANUMERIC LOGGED]: {plate_text} (Conf: {best_ocr_conf:.2f})")
-                    else:
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 1)
+                    ocr_res = self.reader.readtext(gray)
+                    if ocr_res and ocr_res[0][2] >= self.OCR_CONF_THRESHOLD:
+                        raw_text = ocr_res[0][1]
+                        ocr_confidence = float(ocr_res[0][2])
+                        cleaned = self.clean_plate(raw_text)
+
+                        # Validate with strict alphanumeric + length > 4 rule
+                        if self.is_valid_alphanumeric_plate(cleaned):
+                            plate_text = cleaned
+                            display_str = f"{plate_text} ({ocr_confidence:.2f})"
+
+                # Cache detection for skipped frames
+                self.anpr_last_box = (x1, y1, x2, y2)
+                self.anpr_last_display_str = display_str
+                self.draw_overlay(frame, self.anpr_last_box, self.anpr_last_display_str)
+
+                # Record read in all_reads collection for merge_plate_reads()
+                if plate_text:
+                    timestamp_sec = self.anpr_frame_count / fps
+                    self.anpr_all_reads.append((self.anpr_frame_count, timestamp_sec, plate_text, ocr_confidence))
+
+                    # Live Dashboard Feed (Debounced + Highest Confidence)
+                    now = time.time()
+                    last_logged_time, last_best_conf = self.anpr_seen_cooldown.get(plate_text, (0, 0.0))
+
+                    if (now - last_logged_time > 5.0) or (ocr_confidence > last_best_conf + 0.15):
+                        self.anpr_seen_cooldown[plate_text] = (now, ocr_confidence)
+                        self.log_event("ANPR Detection", "Vehicle Plate", plate_text, ocr_confidence, details=f"Cleaned Read: {plate_text}")
+                        
+                        # Periodically export updated merged detection.csv in parent /Logs
+                        self.export_final_anpr_summary()
+
+                        ws_alerts.append({
+                            "id": f"INC-{int(now * 1000)}",
+                            "title": f"LICENSE PLATE: {plate_text}",
+                            "cameraId": camera_id,
+                            "confidence": f"{ocr_confidence * 100:.1f}%",
+                            "time": datetime.now().strftime("%H:%M:%S IST"),
+                            "siren": False,
+                            "silent": True
+                        })
+                        print(f"🚗 [ANPR BEST-READ LOGGED]: {plate_text} (Conf: {ocr_confidence:.2f})")
+
+            else:
+                self.anpr_last_box = None
+                self.anpr_last_display_str = None
 
             cv2.rectangle(frame, (0, 0), (w, 32), (20, 20, 20), -1)
             cv2.putText(frame, "GARUDA ANPR CHECKPOST SYSTEM | ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
             return frame, ws_alerts
+
         except Exception as e:
             print(f"❌ Error in process_anpr_frame: {e}")
             return frame, []
