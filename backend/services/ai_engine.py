@@ -1,16 +1,12 @@
 """
 ==============================================================================
-GARUDA: INTEGRATED AI SURVEILLANCE & THREAT DETECTION ENGINE
-Combines:
-  1. WatchTower YOLO11s Threat Analytics (Intrusions, Loitering, Group Clusters)
-  2. Automatic CLAHE Night Vision Enhancement + Emergency 'N' Hotkey Override
-  3. Audio Siren & Evidence Snapshot Logging (with Instant Silence Control)
-  4. Checkpost ANPR (FRAME_SKIP = 3, is_same_plate, merge_plate_reads)
-  5. WatchTower Cameras (CAM-02, CAM-03, CAM-04):
-     - Breach Detected (Intruder Person, Vehicle Breach, Loitering, Group Convergence)
-     - Live Evidence Frame encoded to Base64 and saved directly to PostgreSQL Database
-  6. Checkpost ANPR (CAM-01):
-     - Plate Text Logged to CSV & Telemetry Feed ONLY (NO database images)
+GARUDA: REAL-TIME AI SURVEILLANCE & THREAT DETECTION ENGINE
+Features:
+  1. High-Priority Breaches -> Saved to PostgreSQL with Base64 Snapshots
+  2. ANPR & Raw Object Telemetry -> Real-time UI stream + CSV logging
+  3. CSV Rolling Retention -> Trims oldest 1,000 rows when exceeding 2,000 rows
+  4. Emergency Night Vision Override (CLAHE)
+  5. Audio Siren Management
 ==============================================================================
 """
 
@@ -45,7 +41,7 @@ class GarudaIntegratedAIEngine:
         self.base_dir = base_dir
 
         # -------------------------------------------------------------
-        # 1. DIRECTORY PATHS
+        # 1. DIRECTORY PATHS & LOG SETUP
         # -------------------------------------------------------------
         self.WT_MODEL_PATH = os.path.join(base_dir, "WatchTower surveillance", "WTbest.pt")
         self.ANPR_MODEL_PATH = os.path.join(base_dir, "ANPR", "Model", "anprbest.pt")
@@ -65,8 +61,12 @@ class GarudaIntegratedAIEngine:
         self.ANPR_DETECTION_CSV = os.path.join(self.PARENT_LOG_DIR, "detection.csv")
 
         if not os.path.exists(self.ALL_OBJECTS_CSV_LOG):
-            with open(self.ALL_OBJECTS_CSV_LOG, "w", newline="") as f:
+            with open(self.ALL_OBJECTS_CSV_LOG, "w", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow(["timestamp", "event_type", "object_type", "track_id", "confidence", "details", "evidence_file"])
+
+        if not os.path.exists(self.ANPR_DETECTION_CSV):
+            with open(self.ANPR_DETECTION_CSV, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerow(["frame", "timestamp_sec", "plate_text"])
 
         # -------------------------------------------------------------
         # 2. AUDIO SIREN
@@ -143,6 +143,30 @@ class GarudaIntegratedAIEngine:
         }
 
     # -----------------------------------------------------------------
+    # ROLLING CSV LOG RETENTION (MAX 2,000 ROWS -> PURGE OLDEST 1,000)
+    # -----------------------------------------------------------------
+    def _trim_csv_if_needed(self, file_path, header, max_rows=2000, keep_rows=1000):
+        """
+        Maintains CSV files at a maximum of 2,000 entries.
+        When 2,000 entries are reached, the oldest 1,000 entries are purged,
+        retaining the clean CSV header and the latest 1,000 entries.
+        """
+        if not os.path.exists(file_path):
+            return
+        try:
+            with open(file_path, "r", newline="", encoding="utf-8") as f:
+                rows = list(csv.reader(f))
+            
+            if len(rows) > max_rows:
+                trimmed = [header] + rows[-keep_rows:]
+                with open(file_path, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerows(trimmed)
+                print(f"🧹 [CSV ROTATION] Trimmed {os.path.basename(file_path)}: Retained latest {keep_rows} rows.")
+        except Exception as e:
+            print(f"⚠️ Error trimming {file_path}: {e}")
+
+    # -----------------------------------------------------------------
     # WATCHTOWER REAL-TIME DATABASE INSERTION (FRAME -> BASE64 -> DB)
     # -----------------------------------------------------------------
     def save_watchtower_breach_to_db(self, camera_id: str, entity_type: str, identifier: str, confidence: float, frame_bgr: np.ndarray, local_file_path: str = None):
@@ -209,9 +233,17 @@ class GarudaIntegratedAIEngine:
         return status, self.NIGHT_MODE_ENABLED
 
     def log_event(self, event_type, object_type, track_id, confidence, details="", evidence_file=""):
+        """Logs raw tracking and surveillance events with auto-rotation at 2,000 rows."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(self.ALL_OBJECTS_CSV_LOG, "a", newline="") as f:
+        with open(self.ALL_OBJECTS_CSV_LOG, "a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow([timestamp, event_type, object_type, track_id, f"{confidence:.2f}", details, evidence_file])
+
+        self._trim_csv_if_needed(
+            self.ALL_OBJECTS_CSV_LOG,
+            header=["timestamp", "event_type", "object_type", "track_id", "confidence", "details", "evidence_file"],
+            max_rows=2000,
+            keep_rows=1000
+        )
 
     def check_group_clustering(self, person_points):
         n = len(person_points)
@@ -527,14 +559,25 @@ class GarudaIntegratedAIEngine:
         return [(best_by_text[t][0], best_by_text[t][1], best_by_text[t][2]) for t in order]
 
     def export_final_anpr_summary(self):
+        """Appends and trims ANPR detections to detection.csv."""
         if not self.anpr_all_reads:
             return
         merged = self.merge_plate_reads(self.anpr_all_reads)
-        with open(self.ANPR_DETECTION_CSV, "w", newline="") as f:
+        
+        file_exists = os.path.exists(self.ANPR_DETECTION_CSV)
+        with open(self.ANPR_DETECTION_CSV, "a" if file_exists else "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["frame", "timestamp_sec", "plate_text"])
+            if not file_exists or os.path.getsize(self.ANPR_DETECTION_CSV) == 0:
+                writer.writerow(["frame", "timestamp_sec", "plate_text"])
             for frame_num, ts, text in merged:
                 writer.writerow([frame_num, f"{ts:.2f}", text])
+
+        self._trim_csv_if_needed(
+            self.ANPR_DETECTION_CSV,
+            header=["frame", "timestamp_sec", "plate_text"],
+            max_rows=2000,
+            keep_rows=1000
+        )
 
     def is_valid_alphanumeric_plate(self, text):
         if len(text) <= self.MIN_PLATE_LENGTH:
@@ -610,7 +653,7 @@ class GarudaIntegratedAIEngine:
                         self.log_event("ANPR Detection", "Vehicle Plate", plate_text, ocr_confidence, details=f"Cleaned Read: {plate_text}")
                         self.export_final_anpr_summary()
 
-                        # Emits only UI telemetry entry — NO database photo insertion
+                        # Broadcast alert for UI telemetry (NO database image)
                         ws_alerts.append({
                             "id": f"INC-{int(now * 1000)}",
                             "title": f"LICENSE PLATE: {plate_text}",
