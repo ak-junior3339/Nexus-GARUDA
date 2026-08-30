@@ -164,6 +164,6 @@ wandb/
 .DS_Store
 
 
-test-input/
+
 breach_logs/
 detections.csv
