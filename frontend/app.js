@@ -10,8 +10,8 @@
      GarudaGuard       -> Role-based route guard
      GarudaSocket      -> WebSocket real-time alerts & Force-Logout listener
      GarudaToast       -> Military HUD notifications
-     GarudaDashboard   -> Dashboard controller & telemetry metrics
-     GarudaAdmin       -> Admin operator provisioning, session control & Evidence Vault
+     GarudaDashboard   -> Dashboard controller & telemetry metrics (Max 200 -> purge 100)
+     GarudaAdmin       -> Admin operator provisioning, session control & Unified Evidence Dossier
      GarudaCameraViewer-> Active camera switcher, Night-mode toggle (Hot-key: N)
    ============================================================================ */
 
@@ -285,7 +285,7 @@ const GarudaToast = {
 };
 
 /* ---------------------------------------------------------------------------
-   8. DASHBOARD CONTROLLER
+   8. DASHBOARD CONTROLLER (MAX 200 ENTRIES -> TRIM OLDEST 100)
    --------------------------------------------------------------------------- */
 const GarudaDashboard = {
   init() {
@@ -336,6 +336,7 @@ const GarudaDashboard = {
     const list = document.getElementById('active-incident-list');
     const badge = document.getElementById('active-incident-count');
 
+    // 1. Filter alerts by active camera feed
     if (typeof GarudaCameraViewer !== 'undefined') {
       const currentCam = GarudaCameraViewer.cameras[GarudaCameraViewer.currentIndex];
       if (alert.cameraId && alert.cameraId !== currentCam) {
@@ -347,6 +348,7 @@ const GarudaDashboard = {
     const emptyState = list.querySelector('.incident-empty');
     if (emptyState) emptyState.remove();
 
+    // 2. Insert new incident row at top
     const row = document.createElement('div');
     row.className = 'incident-row';
     row.dataset.incidentId = alert.id;
@@ -357,12 +359,22 @@ const GarudaDashboard = {
     `;
     list.prepend(row);
 
-    if (badge) {
-      const current = parseInt(badge.dataset.count, 10) || 0;
-      badge.dataset.count = current + 1;
-      badge.textContent = `${current + 1} ENTRIES`;
+    // 3. UI ROLLING BUFFER (IF >= 200 ROWS, REMOVE OLDEST 100)
+    const rows = list.querySelectorAll('.incident-row');
+    if (rows.length >= 200) {
+      for (let i = 100; i < rows.length; i++) {
+        rows[i].remove();
+      }
     }
 
+    // 4. Update count badge
+    if (badge) {
+      const activeCount = list.querySelectorAll('.incident-row').length;
+      badge.dataset.count = activeCount;
+      badge.textContent = `${activeCount} ENTRIES`;
+    }
+
+    // 5. Notification toast
     if (!alert.silent) {
       GarudaToast.show(`ALERT: ${alert.title} on ${alert.cameraId}`, alert.siren ? 'error' : 'default');
     }
@@ -370,10 +382,12 @@ const GarudaDashboard = {
 };
 
 /* ---------------------------------------------------------------------------
-   9. ADMIN CONTROLLER (OPERATORS + EVIDENCE VAULT WITH DELETION)
+   9. ADMIN CONTROLLER (OPERATORS + UNIFIED EVIDENCE DOSSIER & VAULT)
    --------------------------------------------------------------------------- */
 const GarudaAdmin = {
   currentInspectingId: null,
+  currentView: 'table', // 'table' or 'gallery'
+  cachedIncidents: [],
 
   init() {
     const session = GarudaAuthStore.getSession();
@@ -406,25 +420,91 @@ const GarudaAdmin = {
     }
   },
 
+  switchVaultView(mode) {
+    this.currentView = mode;
+    const tableBtn = document.getElementById('view-table-btn');
+    const galleryBtn = document.getElementById('view-gallery-btn');
+    const tableContainer = document.getElementById('dossier-table-container');
+    const galleryGrid = document.getElementById('vault-grid');
+
+    if (mode === 'table') {
+      tableBtn?.classList.add('is-active');
+      galleryBtn?.classList.remove('is-active');
+      if (tableContainer) tableContainer.style.display = 'block';
+      if (galleryGrid) galleryGrid.style.display = 'none';
+    } else {
+      galleryBtn?.classList.add('is-active');
+      tableBtn?.classList.remove('is-active');
+      if (tableContainer) tableContainer.style.display = 'none';
+      if (galleryGrid) galleryGrid.style.display = 'grid';
+    }
+    this.renderDossier();
+  },
+
   async loadEvidenceVault() {
+    const tbody = document.getElementById('dossier-table-body');
     const grid = document.getElementById('vault-grid');
-    if (!grid) return;
-    grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #64748b; font-family: var(--font-mono);">QUERYING DATABASE EVIDENCE PHOTOS...</div>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #64748b; padding: 30px;">QUERYING DATABASE EVIDENCE LOGS...</td></tr>';
+    if (grid) grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #64748b; font-family: var(--font-mono);">QUERYING DATABASE EVIDENCE PHOTOS...</div>';
 
     try {
       const res = await fetch(`${GarudaConfig.API_BASE_URL}/incidents/vault`);
       if (!res.ok) throw new Error("Could not load evidence vault");
-      const incidents = await res.json();
+      this.cachedIncidents = await res.json();
+      this.renderDossier();
+    } catch (err) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #ef4444; padding: 30px;">FAILED TO LOAD DOSSIER: ${err.message}</td></tr>`;
+      if (grid) grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #ef4444; font-family: var(--font-mono);">FAILED TO LOAD EVIDENCE: ${err.message}</div>`;
+    }
+  },
 
-      if (!incidents || incidents.length === 0) {
-        grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: rgba(255,255,255,0.3); font-family: var(--font-mono);">NO EVIDENCE PHOTOS IN DATABASE YET.</div>';
-        return;
-      }
+  renderDossier() {
+    const incidents = this.cachedIncidents;
+    const tbody = document.getElementById('dossier-table-body');
+    const grid = document.getElementById('vault-grid');
 
+    if (!incidents || incidents.length === 0) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: rgba(255,255,255,0.3); padding: 35px;">NO THREAT BREACH INCIDENTS RECORDED IN DATABASE.</td></tr>';
+      if (grid) grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 40px; text-align: center; color: rgba(255,255,255,0.3); font-family: var(--font-mono);">NO EVIDENCE PHOTOS IN DATABASE.</div>';
+      return;
+    }
+
+    // 1. Render Table Dossier Rows
+    if (tbody) {
+      tbody.innerHTML = '';
+      incidents.forEach((inc) => {
+        const tr = document.createElement('tr');
+        tr.dataset.incidentId = inc.id;
+
+        let badgeClass = 'vault-badge--breach';
+        if (inc.entity_type.includes('Group')) badgeClass = 'vault-badge--group';
+        if (inc.entity_type.includes('Loiter')) badgeClass = 'vault-badge--loiter';
+
+        const timestampStr = new Date(inc.timestamp).toLocaleString('en-IN', { hour12: false });
+        const confPercent = (inc.confidence * 100).toFixed(1);
+
+        tr.innerHTML = `
+          <td>
+            <img class="dossier-thumb" src="${inc.image_data}" alt="Evidence" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')" />
+          </td>
+          <td><span class="vault-badge ${badgeClass}">${inc.entity_type.toUpperCase()}</span></td>
+          <td><strong style="color: #fff;">${inc.identifier || 'UNKNOWN'}</strong></td>
+          <td><span style="color: #818cf8; font-weight: bold;">${inc.camera_id}</span></td>
+          <td style="color: #94a3b8; font-size: 11px;">${timestampStr}</td>
+          <td><span style="color: #4ade80;">${confPercent}%</span></td>
+          <td>
+            <button type="button" class="btn-mini" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')" style="margin-right: 6px; cursor: pointer;">INSPECT</button>
+            <button type="button" class="btn-mini btn-mini--danger" onclick="GarudaAdmin.deleteBreachImage('${inc.id}')" style="cursor: pointer;">DELETE</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 2. Render Card Gallery
+    if (grid) {
       grid.innerHTML = '';
       incidents.forEach((inc) => {
-        if (!inc.image_data) return;
-
         const card = document.createElement('div');
         card.className = 'vault-card';
         card.dataset.incidentId = inc.id;
@@ -454,9 +534,6 @@ const GarudaAdmin = {
         `;
         grid.appendChild(card);
       });
-
-    } catch (err) {
-      grid.innerHTML = `<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #ef4444; font-family: var(--font-mono);">FAILED TO LOAD EVIDENCE: ${err.message}</div>`;
     }
   },
 
@@ -482,15 +559,16 @@ const GarudaAdmin = {
   },
 
   async deleteBreachImage(incidentId) {
-    const confirmed = window.confirm("Are you sure you want to delete this breach record & image permanently from the database?");
+    const confirmed = window.confirm("Permanently delete this incident log & evidence image from the database?");
     if (!confirmed) return;
 
     try {
       if (GarudaConfig.BACKEND_ENABLED) {
         await GarudaAPI.deleteIncident(incidentId);
       }
-      document.querySelector(`.vault-card[data-incident-id="${incidentId}"]`)?.remove();
-      GarudaToast.show("Breach record permanently deleted from database.", "success");
+      this.cachedIncidents = this.cachedIncidents.filter(i => i.id !== incidentId);
+      document.querySelectorAll(`[data-incident-id="${incidentId}"]`).forEach(el => el.remove());
+      GarudaToast.show("Incident record permanently removed from database.", "success");
     } catch (err) {
       GarudaToast.show(`Delete failed: ${err.message}`, "error");
     }
@@ -635,10 +713,10 @@ const GarudaAdmin = {
 const GarudaCameraViewer = {
   cameras: ['CAM-01', 'CAM-02', 'CAM-03', 'CAM-04'],
   cameraNames: {
-    'CAM-01': 'CHECKPOST ANPR SECTOR',
-    'CAM-02': 'WATCHTOWER NORTH PERIMETER',
-    'CAM-03': 'PATROL GATE 02',
-    'CAM-04': 'FORWARD OBS POST 09'
+    'CAM-01': 'CHECKPOST ANPR',
+    'CAM-02': 'WATCHTOWER 01',
+    'CAM-03': 'WATCHTOWER 02',
+    'CAM-04': 'FACECAM'
   },
   cameraCoords: {
     'CAM-01': '28.6139°N 77.2090°E',
