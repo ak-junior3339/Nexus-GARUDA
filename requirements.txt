@@ -52,9 +52,6 @@ nvidia-ml-py==13.610.43
 opencv-contrib-python==5.0.0.93
 opt-einsum==3.3.0
 packaging==26.3
-paddleocr==3.7.0
-paddlepaddle==3.3.1
-paddlex==3.7.2
 pandas==3.0.5
 passlib==1.7.4
 pillow==12.3.0
