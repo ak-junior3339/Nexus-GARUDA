@@ -76,7 +76,7 @@ python-bidi==0.6.11
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
 python-jose==3.5.0
-PyYAML==6.0.3
+PyYAML==6.0.2
 requests==2.34.2
 rsa==4.9.1
 ruamel.yaml==0.19.1
