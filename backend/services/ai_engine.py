@@ -6,7 +6,11 @@ Combines:
   2. Automatic CLAHE Night Vision Enhancement + Emergency 'N' Hotkey Override
   3. Audio Siren & Evidence Snapshot Logging (with Instant Silence Control)
   4. Checkpost ANPR (FRAME_SKIP = 3, is_same_plate, merge_plate_reads)
-  5. Centralized Root Parent Folder Logging: /Nexus-Garuda/Logs/
+  5. WatchTower Cameras (CAM-02, CAM-03, CAM-04):
+     - Breach Detected (Intruder Person, Vehicle Breach, Loitering, Group Convergence)
+     - Live Evidence Frame encoded to Base64 and saved directly to PostgreSQL Database
+  6. Checkpost ANPR (CAM-01):
+     - Plate Text Logged to CSV & Telemetry Feed ONLY (NO database images)
 ==============================================================================
 """
 
@@ -16,6 +20,7 @@ import cv2
 import csv
 import math
 import time
+import base64
 import torch
 import pygame
 import numpy as np
@@ -23,6 +28,10 @@ from datetime import datetime
 from collections import defaultdict
 from shapely.geometry import LineString
 from ultralytics import YOLO
+
+# Database Imports
+from db.database import SessionLocal
+from db import models
 
 try:
     import easyocr
@@ -36,13 +45,12 @@ class GarudaIntegratedAIEngine:
         self.base_dir = base_dir
 
         # -------------------------------------------------------------
-        # 1. DIRECTORY & PATH DEFINITIONS (CENTRALIZED IN PARENT /Logs)
+        # 1. DIRECTORY PATHS
         # -------------------------------------------------------------
         self.WT_MODEL_PATH = os.path.join(base_dir, "WatchTower surveillance", "WTbest.pt")
         self.ANPR_MODEL_PATH = os.path.join(base_dir, "ANPR", "Model", "anprbest.pt")
         self.ALARM_PATH = os.path.join(base_dir, "WatchTower surveillance", "Alert", "alarm.wav")
 
-        # Parent directory Logs folder
         self.PARENT_LOG_DIR = os.path.join(base_dir, "Logs")
         self.BREACH_LOG_DIR = os.path.join(self.PARENT_LOG_DIR, "breach_logs")
         self.PERSON_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "person")
@@ -53,7 +61,6 @@ class GarudaIntegratedAIEngine:
         for d in [self.PARENT_LOG_DIR, self.BREACH_LOG_DIR, self.PERSON_LOG_DIR, self.CAR_LOG_DIR, self.LOITER_LOG_DIR, self.GROUP_LOG_DIR]:
             os.makedirs(d, exist_ok=True)
 
-        # Centralized CSV log files in parent /Logs
         self.ALL_OBJECTS_CSV_LOG = os.path.join(self.PARENT_LOG_DIR, "surveillance_log.csv")
         self.ANPR_DETECTION_CSV = os.path.join(self.PARENT_LOG_DIR, "detection.csv")
 
@@ -62,56 +69,42 @@ class GarudaIntegratedAIEngine:
                 csv.writer(f).writerow(["timestamp", "event_type", "object_type", "track_id", "confidence", "details", "evidence_file"])
 
         # -------------------------------------------------------------
-        # 2. AUDIO SIREN INITIALIZATION
+        # 2. AUDIO SIREN
         # -------------------------------------------------------------
         pygame.mixer.init()
         try:
             self.alarm_sound = pygame.mixer.Sound(self.ALARM_PATH)
-            print(f"✅ Audio siren initialized from: {self.ALARM_PATH}")
-        except Exception as e:
-            print(f"⚠️ Audio alarm file issue ({e}). Using system audio fallback.")
+        except Exception:
             self.alarm_sound = None
 
         self.last_alarm_time = 0
         self.ALARM_COOLDOWN = 3.0
 
         # -------------------------------------------------------------
-        # 3. LOAD YOLO MODELS
+        # 3. YOLO & OCR INITIALIZATION
         # -------------------------------------------------------------
-        print("🚀 Loading WatchTower & ANPR YOLO models...")
         try:
             self.wt_model = YOLO(self.WT_MODEL_PATH)
-            print(f"✅ WatchTower weights loaded: {self.WT_MODEL_PATH}")
-        except Exception as e:
-            print(f"⚠️ WTbest.pt not found ({e}), falling back to yolo11s.pt")
+        except Exception:
             self.wt_model = YOLO("yolo11s.pt")
 
         try:
             self.anpr_model = YOLO(self.ANPR_MODEL_PATH)
-            print(f"✅ ANPR weights loaded: {self.ANPR_MODEL_PATH}")
-        except Exception as e:
-            print(f"⚠️ anprbest.pt not found ({e}), falling back to yolov8n.pt")
+        except Exception:
             self.anpr_model = YOLO("yolov8n.pt")
 
-        # -------------------------------------------------------------
-        # 4. ROBUST EASYOCR INITIALIZATION
-        # -------------------------------------------------------------
         self.reader = None
         if EASYOCR_AVAILABLE:
             try:
-                use_gpu = torch.cuda.is_available()
-                self.reader = easyocr.Reader(['en'], gpu=use_gpu)
-                print(f"✅ EasyOCR initialized on {'GPU' if use_gpu else 'CPU'}")
-            except Exception as e:
-                print(f"⚠️ GPU init failed, trying CPU fallback: {e}")
+                self.reader = easyocr.Reader(['en'], gpu=torch.cuda.is_available())
+            except Exception:
                 try:
                     self.reader = easyocr.Reader(['en'], gpu=False)
-                    print("✅ EasyOCR initialized on CPU")
-                except Exception as e2:
-                    print(f"❌ EasyOCR failed to load: {e2}")
+                except Exception:
+                    pass
 
         # -------------------------------------------------------------
-        # 5. STATE MANAGEMENT
+        # 4. SURVEILLANCE STATE
         # -------------------------------------------------------------
         self.trajectory_history = defaultdict(list)
         self.anchor_points = {}
@@ -122,7 +115,7 @@ class GarudaIntegratedAIEngine:
 
         self.LOITER_TIME_LIMIT = 20.0
         self.LOITER_RADIUS = 150
-        self.GROUP_CLUSTER_RADIUS = 150
+        self.GROUP_CLUSTER_RADIUS = 120
         self.GROUP_MIN_PEOPLE = 3
         self.GROUP_ALERT_COOLDOWN = 15.0
         self.last_group_alert_time = 0.0
@@ -132,7 +125,7 @@ class GarudaIntegratedAIEngine:
         self.AUTO_NIGHT_MODE = True
         self.NIGHT_MODE_ENABLED = False
 
-        # ANPR Specific State (From anpr_engine.py)
+        # ANPR State
         self.FRAME_SKIP = 2
         self.MIN_PLATE_LENGTH = 4
         self.DETECTION_CONF_THRESHOLD = 0.40
@@ -140,15 +133,44 @@ class GarudaIntegratedAIEngine:
         self.anpr_frame_count = 0
         self.anpr_last_box = None
         self.anpr_last_display_str = None
-        self.anpr_all_reads = [] # [(frame_count, timestamp_sec, plate_text, ocr_confidence)]
-        self.anpr_seen_cooldown = {} # plate_text -> (timestamp, best_conf)
+        self.anpr_all_reads = []
+        self.anpr_seen_cooldown = {}
 
-        # Configurable tripwires (per camera)
         self.tripwire_lines = {
             "CAM-02": LineString([(0, 650), (1920, 650)]),
             "CAM-03": LineString([(350, 0), (350, 1080)]),
             "CAM-04": LineString([(0, 650), (1920, 650)]),
         }
+
+    # -----------------------------------------------------------------
+    # WATCHTOWER REAL-TIME DATABASE INSERTION (FRAME -> BASE64 -> DB)
+    # -----------------------------------------------------------------
+    def save_watchtower_breach_to_db(self, camera_id: str, entity_type: str, identifier: str, confidence: float, frame_bgr: np.ndarray, local_file_path: str = None):
+        """
+        Saves ONLY Watchtower live breach snapshots (Intruders, Cars, Loitering, Groups) into PostgreSQL.
+        """
+        try:
+            _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            base64_image = f"data:image/jpeg;base64,{base64.b64encode(buffer).decode('utf-8')}"
+
+            db = SessionLocal()
+            try:
+                incident = models.Incident(
+                    camera_id=camera_id,
+                    entity_type=entity_type,
+                    identifier=str(identifier),
+                    confidence=float(confidence),
+                    image_path=local_file_path,
+                    image_data=base64_image,
+                    status="UNRESOLVED"
+                )
+                db.add(incident)
+                db.commit()
+                print(f"🚨 [WATCHTOWER DB SAVED] {entity_type} ({identifier}) from {camera_id}")
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"⚠️ Failed to save watchtower breach to DB: {e}")
 
     # -----------------------------------------------------------------
     # SIREN CONTROLS
@@ -163,31 +185,27 @@ class GarudaIntegratedAIEngine:
                 os.system("afplay /System/Library/Sounds/Submarine.aiff &")
 
     def stop_siren(self):
-        """Immediately silences any playing alarm audio."""
         try:
             if pygame.mixer.get_init():
                 pygame.mixer.stop()
             os.system("pkill -9 afplay 2>/dev/null")
-        except Exception as e:
-            print(f"Error stopping siren: {e}")
+        except Exception:
+            pass
 
     # -----------------------------------------------------------------
-    # NIGHT VISION (AUTOMATIC SENSOR + EMERGENCY MANUAL OVERRIDE)
+    # NIGHT VISION
     # -----------------------------------------------------------------
     def apply_night_vision_enhancement(self, frame):
         lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
-        l_channel, a_channel, b_channel = cv2.split(lab)
+        l, a, b = cv2.split(lab)
         clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        enhanced_l = clahe.apply(l_channel)
-        enhanced_lab = cv2.merge((enhanced_l, a_channel, b_channel))
-        return cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+        enhanced_l = clahe.apply(l)
+        return cv2.cvtColor(cv2.merge((enhanced_l, a, b)), cv2.COLOR_LAB2BGR)
 
     def emergency_toggle_night_vision(self):
-        """Disables AUTO mode and toggles manual state (Force ON / Force OFF)."""
         self.AUTO_NIGHT_MODE = False
         self.NIGHT_MODE_ENABLED = not self.NIGHT_MODE_ENABLED
         status = "MANUAL ON" if self.NIGHT_MODE_ENABLED else "MANUAL OFF"
-        print(f"🚨 [EMERGENCY OVERRIDE] Night Vision set to {status}")
         return status, self.NIGHT_MODE_ENABLED
 
     def log_event(self, event_type, object_type, track_id, confidence, details="", evidence_file=""):
@@ -224,8 +242,7 @@ class GarudaIntegratedAIEngine:
             clusters_by_root[find(idx)].append(track_id)
 
         qualifying = [m for m in clusters_by_root.values() if len(m) >= self.GROUP_MIN_PEOPLE]
-        grouped_ids = {tid for cluster in qualifying for tid in cluster}
-        return grouped_ids, qualifying
+        return {tid for cluster in qualifying for tid in cluster}, qualifying
 
     def check_breach(self, camera_id, track_id, current_center_pt):
         history = self.trajectory_history[track_id]
@@ -259,7 +276,7 @@ class GarudaIntegratedAIEngine:
             return False, 0.0
 
     # -----------------------------------------------------------------
-    # MAIN WATCHTOWER PROCESSING FUNCTION (CAM-02, CAM-03, CAM-04)
+    # MAIN WATCHTOWER LIVE PROCESSING (CAM-02, CAM-03, CAM-04)
     # -----------------------------------------------------------------
     def process_watchtower_frame(self, raw_frame, camera_id="CAM-02"):
         try:
@@ -267,16 +284,15 @@ class GarudaIntegratedAIEngine:
             h, w, _ = raw_frame.shape
             ws_alerts = []
 
-            # 1. Automatic CLAHE Brightness Sensing
+            # Automatic Night Mode
             if self.AUTO_NIGHT_MODE:
                 avg_brightness = np.mean(cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY))
                 self.NIGHT_MODE_ENABLED = bool(avg_brightness < 60)
 
-            # 2. Enhance Frame
             processed_frame = self.apply_night_vision_enhancement(raw_frame) if self.NIGHT_MODE_ENABLED else raw_frame.copy()
             clean_snapshot = processed_frame.copy()
 
-            # Draw Tripwire Line
+            # Draw Perimeter Fence
             tw_line = self.tripwire_lines.get(camera_id, LineString([(0, int(h * 0.6)), (w, int(h * 0.6))]))
             p1, p2 = tw_line.coords[0], tw_line.coords[1]
             cv2.line(processed_frame, (int(p1[0]), int(p1[1])), (int(p2[0]), int(p2[1])), (0, 0, 255), 2)
@@ -291,7 +307,6 @@ class GarudaIntegratedAIEngine:
                 class_ids = results.boxes.cls.int().cpu().numpy()
                 confs = results.boxes.conf.cpu().numpy()
 
-                # Group Clustering Pre-pass
                 person_points = [
                     (int(tid), ((int(box[0]) + int(box[2])) // 2, (int(box[1]) + int(box[3])) // 2))
                     for box, tid, cid in zip(boxes, track_ids, class_ids) if cid == 0
@@ -299,6 +314,7 @@ class GarudaIntegratedAIEngine:
                 grouped_track_ids, qualifying_clusters = self.check_group_clustering(person_points)
                 cluster_size_by_track = {tid: len(cluster) for cluster in qualifying_clusters for tid in cluster}
 
+                # 1. GROUP CONVERGENCE (REAL-TIME SNAPSHOT -> DATABASE)
                 if qualifying_clusters:
                     current_time = time.time()
                     if (current_time - self.last_group_alert_time) > self.GROUP_ALERT_COOLDOWN:
@@ -314,8 +330,19 @@ class GarudaIntegratedAIEngine:
                                 cv2.rectangle(evidence, (gx1, gy1), (gx2, gy2), (255, 0, 255), 2)
                         cv2.imwrite(group_file, evidence)
 
-                        self.log_event("Group Convergence", "Person", ",".join(str(t) for t in largest), 0.0,
+                        group_ids_str = ",".join(str(t) for t in largest)
+                        self.log_event("Group Convergence", "Person", group_ids_str, 0.95,
                                        details=f"{len(largest)} people converged", evidence_file=group_file)
+
+                        # Save live evidence snapshot directly to PostgreSQL
+                        self.save_watchtower_breach_to_db(
+                            camera_id=camera_id,
+                            entity_type="Group Convergence",
+                            identifier=f"GROUP-{len(largest)}PPL",
+                            confidence=0.95,
+                            frame_bgr=evidence,
+                            local_file_path=group_file
+                        )
 
                         ws_alerts.append({
                             "id": f"INC-{int(current_time * 1000)}",
@@ -338,7 +365,7 @@ class GarudaIntegratedAIEngine:
 
                     has_breached = self.check_breach(camera_id, track_id, center_pt)
 
-                    # Class 0: PERSON
+                    # Class 0: PERSON (INTRUDER OR LOITERING)
                     if cls_id == 0:
                         is_loitering, duration = self.check_loitering(track_id, center_pt)
                         if has_breached:
@@ -354,6 +381,16 @@ class GarudaIntegratedAIEngine:
                                 cv2.imwrite(fn, evidence)
                                 self.log_event("Person Breach", "Person", track_id, conf, details="Crossed fence", evidence_file=fn)
                                 self.logged_intruders.add(track_id)
+
+                                # Save live intruder snapshot directly to PostgreSQL
+                                self.save_watchtower_breach_to_db(
+                                    camera_id=camera_id,
+                                    entity_type="Person Breach",
+                                    identifier=f"INTRUDER-#{track_id}",
+                                    confidence=float(conf),
+                                    frame_bgr=evidence,
+                                    local_file_path=fn
+                                )
 
                                 ws_alerts.append({
                                     "id": f"INC-{int(time.time() * 1000)}",
@@ -378,6 +415,16 @@ class GarudaIntegratedAIEngine:
                                 self.log_event("Loitering", "Person", track_id, conf, details=f"Pacing {duration:.0f}s", evidence_file=fn)
                                 self.logged_loiterers.add(track_id)
 
+                                # Save live loitering snapshot directly to PostgreSQL
+                                self.save_watchtower_breach_to_db(
+                                    camera_id=camera_id,
+                                    entity_type="Loitering",
+                                    identifier=f"LOITERER-#{track_id}",
+                                    confidence=float(conf),
+                                    frame_bgr=evidence,
+                                    local_file_path=fn
+                                )
+
                                 ws_alerts.append({
                                     "id": f"INC-{int(time.time() * 1000)}",
                                     "title": f"SUSPICIOUS LOITERING #{track_id}",
@@ -390,7 +437,7 @@ class GarudaIntegratedAIEngine:
                             box_color = (255, 255, 0)
                             label = f"ID:{track_id} PERSON ({conf:.2f})"
 
-                    # Class 1: VEHICLE
+                    # Class 1: VEHICLE BREACH
                     elif cls_id == 1:
                         if has_breached:
                             box_color = (0, 140, 255)
@@ -404,6 +451,16 @@ class GarudaIntegratedAIEngine:
                                 cv2.imwrite(fn, evidence)
                                 self.log_event("Vehicle Breach", "Vehicle", track_id, conf, details="Crossed boundary", evidence_file=fn)
                                 self.logged_vehicles.add(track_id)
+
+                                # Save live vehicle breach snapshot directly to PostgreSQL
+                                self.save_watchtower_breach_to_db(
+                                    camera_id=camera_id,
+                                    entity_type="Vehicle Breach",
+                                    identifier=f"VEHICLE-#{track_id}",
+                                    confidence=float(conf),
+                                    frame_bgr=evidence,
+                                    local_file_path=fn
+                                )
 
                                 ws_alerts.append({
                                     "id": f"INC-{int(time.time() * 1000)}",
@@ -443,42 +500,23 @@ class GarudaIntegratedAIEngine:
             return raw_frame, []
 
     # -----------------------------------------------------------------
-    # 3 ESSENTIAL ANPR ENGINE CORE FUNCTIONS (FROM anpr_engine.py)
+    # ANPR REAL-TIME PROCESSING (NO DATABASE IMAGES - LOGS ONLY)
     # -----------------------------------------------------------------
     def clean_plate(self, text):
-        """
-        Normalize raw OCR output into a plate-like string.
-        - Uppercase everything.
-        - Strip out ANY character that is not A-Z or 0-9.
-        - Remove leading 'IND' / 'IN' / 'I' watermark.
-        """
         text = text.upper().strip()
         text = re.sub(r'[^A-Z0-9]', '', text)
         text = re.sub(r'^(?:IND|IN|I)', '', text)
         return text
 
     def is_same_plate(self, a, b):
-        """
-        Exact-match duplicate check: two reads are considered the same plate
-        only if their cleaned text is identical.
-        """
         return a == b
 
     def merge_plate_reads(self, reads):
-        """
-        Takes collected (frame, timestamp_sec, plate_text, ocr_confidence) tuples:
-          1. Keeps only reads longer than MIN_PLATE_LENGTH characters (> 4).
-          2. Removes exact duplicates, keeping the highest-confidence read
-             for each distinct plate text.
-        Returns a list of (frame, timestamp_sec, plate_text) for final export.
-        """
         best_by_text = {}
         order = []
-
         for frame_num, ts, text, conf in reads:
             if len(text) <= self.MIN_PLATE_LENGTH:
                 continue
-
             if text not in best_by_text:
                 best_by_text[text] = (frame_num, ts, text, conf)
                 order.append(text)
@@ -486,13 +524,9 @@ class GarudaIntegratedAIEngine:
                 _, _, _, best_conf = best_by_text[text]
                 if conf > best_conf:
                     best_by_text[text] = (frame_num, ts, text, conf)
-
         return [(best_by_text[t][0], best_by_text[t][1], best_by_text[t][2]) for t in order]
 
     def export_final_anpr_summary(self):
-        """
-        Writes the merged best-of-session reads to /Logs/detection.csv in the parent directory.
-        """
         if not self.anpr_all_reads:
             return
         merged = self.merge_plate_reads(self.anpr_all_reads)
@@ -501,10 +535,8 @@ class GarudaIntegratedAIEngine:
             writer.writerow(["frame", "timestamp_sec", "plate_text"])
             for frame_num, ts, text in merged:
                 writer.writerow([frame_num, f"{ts:.2f}", text])
-        print(f"📊 [ANPR EXPORT] Saved {len(merged)} unique merged plates to: {self.ANPR_DETECTION_CSV}")
 
     def is_valid_alphanumeric_plate(self, text):
-        """Strict alphanumeric rule: length > 4 AND contains both letters & digits."""
         if len(text) <= self.MIN_PLATE_LENGTH:
             return False
         has_letter = any(c.isalpha() for c in text)
@@ -512,15 +544,11 @@ class GarudaIntegratedAIEngine:
         return bool(has_letter and has_digit)
 
     def draw_overlay(self, frame, box, display_str):
-        """Draws the bounding box and label text onto the frame in place."""
         x1, y1, x2, y2 = box
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(frame, display_str, (x1, max(30, y1 - 10)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-    # -----------------------------------------------------------------
-    # MAIN ANPR PROCESSING (WITH FRAME_SKIP = 3 & DEDUPLICATION)
-    # -----------------------------------------------------------------
     def process_anpr_frame(self, frame, camera_id="CAM-01"):
         try:
             h, w = frame.shape[:2]
@@ -528,20 +556,13 @@ class GarudaIntegratedAIEngine:
             self.anpr_frame_count += 1
             fps = 30.0
 
-            # ---------------------------------------------------------
-            # FEATURE 1: FRAME_SKIP = 3 (Redraw cached box on skipped frames)
-            # ---------------------------------------------------------
             if self.anpr_frame_count % self.FRAME_SKIP != 0:
                 if self.anpr_last_box is not None:
                     self.draw_overlay(frame, self.anpr_last_box, self.anpr_last_display_str)
-
                 cv2.rectangle(frame, (0, 0), (w, 32), (20, 20, 20), -1)
                 cv2.putText(frame, "GARUDA ANPR CHECKPOST SYSTEM | ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
                 return frame, []
 
-            # ---------------------------------------------------------
-            # RUN YOLO + OCR ON EVERY 3RD FRAME
-            # ---------------------------------------------------------
             results = self.anpr_model(frame, conf=self.DETECTION_CONF_THRESHOLD, verbose=False)[0]
             boxes = results.boxes
 
@@ -549,9 +570,6 @@ class GarudaIntegratedAIEngine:
                 best_idx = int(boxes.conf.argmax())
                 best_box = boxes[best_idx]
                 x1, y1, x2, y2 = map(int, best_box.xyxy[0])
-                det_conf = float(best_box.conf[0].item())
-
-                # Clamp to frame boundaries
                 x1, y1 = max(0, x1), max(0, y1)
                 x2, y2 = min(w, x2), min(h, y2)
 
@@ -572,32 +590,27 @@ class GarudaIntegratedAIEngine:
                         ocr_confidence = float(ocr_res[0][2])
                         cleaned = self.clean_plate(raw_text)
 
-                        # Validate with strict alphanumeric + length > 4 rule
                         if self.is_valid_alphanumeric_plate(cleaned):
                             plate_text = cleaned
                             display_str = f"{plate_text} ({ocr_confidence:.2f})"
 
-                # Cache detection for skipped frames
                 self.anpr_last_box = (x1, y1, x2, y2)
                 self.anpr_last_display_str = display_str
                 self.draw_overlay(frame, self.anpr_last_box, self.anpr_last_display_str)
 
-                # Record read in all_reads collection for merge_plate_reads()
                 if plate_text:
                     timestamp_sec = self.anpr_frame_count / fps
                     self.anpr_all_reads.append((self.anpr_frame_count, timestamp_sec, plate_text, ocr_confidence))
 
-                    # Live Dashboard Feed (Debounced + Highest Confidence)
                     now = time.time()
                     last_logged_time, last_best_conf = self.anpr_seen_cooldown.get(plate_text, (0, 0.0))
 
                     if (now - last_logged_time > 5.0) or (ocr_confidence > last_best_conf + 0.15):
                         self.anpr_seen_cooldown[plate_text] = (now, ocr_confidence)
                         self.log_event("ANPR Detection", "Vehicle Plate", plate_text, ocr_confidence, details=f"Cleaned Read: {plate_text}")
-                        
-                        # Periodically export updated merged detection.csv in parent /Logs
                         self.export_final_anpr_summary()
 
+                        # Emits only UI telemetry entry — NO database photo insertion
                         ws_alerts.append({
                             "id": f"INC-{int(now * 1000)}",
                             "title": f"LICENSE PLATE: {plate_text}",
