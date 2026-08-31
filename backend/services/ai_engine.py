@@ -2,11 +2,11 @@
 ==============================================================================
 GARUDA: REAL-TIME AI SURVEILLANCE & THREAT DETECTION ENGINE
 Features:
-  1. High-Priority Breaches -> Saved to PostgreSQL with Base64 Snapshots
-  2. ANPR & Raw Object Telemetry -> Real-time UI stream + CSV logging
-  3. CSV Rolling Retention -> Trims oldest 1,000 rows when exceeding 2,000 rows
-  4. Emergency Night Vision Override (CLAHE)
-  5. Audio Siren Management
+  1. High-Yield Raw Video ANPR (CLAHE Preprocessing, Multi-Plate Detection)
+  2. WatchTower Threat Detection (Intruder, Vehicle Breach, Loiter, Group)
+  3. Real-Time PostgreSQL Evidence Snapshots (Base64)
+  4. Rolling CSV Retention (Max 2,000 entries -> trims oldest 1,000)
+  5. Emergency Night Vision Override (CLAHE) & Audio Siren System
 ==============================================================================
 """
 
@@ -125,20 +125,19 @@ class GarudaIntegratedAIEngine:
         self.AUTO_NIGHT_MODE = True
         self.NIGHT_MODE_ENABLED = False
 
-        # ANPR State
-        self.FRAME_SKIP = 2
+        # Raw Video ANPR Settings
+        self.FRAME_SKIP = 5
         self.MIN_PLATE_LENGTH = 4
-        self.DETECTION_CONF_THRESHOLD = 0.40
-        self.OCR_CONF_THRESHOLD = 0.40
+        self.DETECTION_CONF_THRESHOLD = 0.25
+        self.OCR_CONF_THRESHOLD = 0.25
         self.anpr_frame_count = 0
-        self.anpr_last_box = None
-        self.anpr_last_display_str = None
+        self.anpr_last_boxes = []  # List of active boxes for multi-plate cache
         self.anpr_all_reads = []
         self.anpr_seen_cooldown = {}
 
         self.tripwire_lines = {
-            "CAM-02": LineString([(0, 650), (1920, 650)]),
-            "CAM-03": LineString([(350, 0), (350, 1080)]),
+            "CAM-02": LineString([(60, 520), (1860, 520)]),
+            "CAM-03": LineString([(100, 480), (1820, 480)]),
             "CAM-04": LineString([(0, 650), (1920, 650)]),
         }
 
@@ -149,7 +148,7 @@ class GarudaIntegratedAIEngine:
         """
         Maintains CSV files at a maximum of 2,000 entries.
         When 2,000 entries are reached, the oldest 1,000 entries are purged,
-        retaining the clean CSV header and the latest 1,000 entries.
+        retaining the clean CSV header and the newest 1,000 entries.
         """
         if not os.path.exists(file_path):
             return
@@ -532,9 +531,10 @@ class GarudaIntegratedAIEngine:
             return raw_frame, []
 
     # -----------------------------------------------------------------
-    # ANPR REAL-TIME PROCESSING (NO DATABASE IMAGES - LOGS ONLY)
+    # ENHANCED RAW VIDEO ANPR ENGINE (ENHANCEMENTS 1, 2, 3, 4)
     # -----------------------------------------------------------------
     def clean_plate(self, text):
+        """Cleans and standardizes raw OCR characters on Indian plates."""
         text = text.upper().strip()
         text = re.sub(r'[^A-Z0-9]', '', text)
         text = re.sub(r'^(?:IND|IN|I)', '', text)
@@ -586,6 +586,25 @@ class GarudaIntegratedAIEngine:
         has_digit = any(c.isdigit() for c in text)
         return bool(has_letter and has_digit)
 
+    def preprocess_plate_for_ocr(self, crop):
+        """Enhancement 3: Upscaling + CLAHE Contrast boost + Bilateral smoothing."""
+        if crop.size == 0:
+            return crop
+        h, w = crop.shape[:2]
+        # 1. Upscale low-res small crops
+        if w < 240:
+            scale = 240 / max(1, w)
+            crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        
+        # 2. Convert to Grayscale & apply adaptive histogram equalization (CLAHE)
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+        
+        # 3. Bilateral Filter: Sharpens text edges while eliminating road/sensor noise
+        filtered = cv2.bilateralFilter(enhanced, 9, 75, 75)
+        return filtered
+
     def draw_overlay(self, frame, box, display_str):
         x1, y1, x2, y2 = box
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -599,75 +618,84 @@ class GarudaIntegratedAIEngine:
             self.anpr_frame_count += 1
             fps = 30.0
 
+            # Dynamic cache on skipped frames to maintain FPS
             if self.anpr_frame_count % self.FRAME_SKIP != 0:
-                if self.anpr_last_box is not None:
-                    self.draw_overlay(frame, self.anpr_last_box, self.anpr_last_display_str)
+                for cached_box, cached_str in self.anpr_last_boxes:
+                    self.draw_overlay(frame, cached_box, cached_str)
                 cv2.rectangle(frame, (0, 0), (w, 32), (20, 20, 20), -1)
                 cv2.putText(frame, "GARUDA ANPR CHECKPOST SYSTEM | ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
                 return frame, []
 
+            # Enhancement 1: High Sensitivity Detection Threshold (0.25)
             results = self.anpr_model(frame, conf=self.DETECTION_CONF_THRESHOLD, verbose=False)[0]
             boxes = results.boxes
 
+            current_boxes = []
+
             if boxes is not None and len(boxes) > 0:
-                best_idx = int(boxes.conf.argmax())
-                best_box = boxes[best_idx]
-                x1, y1, x2, y2 = map(int, best_box.xyxy[0])
-                x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(w, x2), min(h, y2)
+                # Enhancement 2: Multi-Plate Detection (Scan all vehicles in view)
+                for box in boxes:
+                    conf = float(box.conf[0])
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    x1, y1 = max(0, x1), max(0, y1)
+                    x2, y2 = min(w, x2), min(h, y2)
 
-                plate_crop = frame[y1:y2, x1:x2]
-                plate_text = None
-                ocr_confidence = 0.0
-                display_str = "Plate Detected"
+                    plate_crop = frame[y1:y2, x1:x2]
+                    plate_text = None
+                    ocr_confidence = 0.0
+                    display_str = "Plate Detected"
 
-                if self.reader and plate_crop.size > 0:
-                    if plate_crop.shape[1] < 200 and plate_crop.shape[1] > 0:
-                        scale = 200 / plate_crop.shape[1]
-                        plate_crop = cv2.resize(plate_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-                    gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+                    if self.reader and plate_crop.size > 0:
+                        # Preprocess crop
+                        processed_crop = self.preprocess_plate_for_ocr(plate_crop)
+                        
+                        ocr_res = self.reader.readtext(
+                            processed_crop, 
+                            allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+                            paragraph=False
+                        )
+                        
+                        # Enhancement 4: Multi-line parsing + Alphanumeric Validation
+                        if ocr_res and len(ocr_res) > 0:
+                            raw_text = "".join([res[1] for res in ocr_res])
+                            ocr_confidence = float(max([res[2] for res in ocr_res]))
 
-                    ocr_res = self.reader.readtext(gray)
-                    if ocr_res and ocr_res[0][2] >= self.OCR_CONF_THRESHOLD:
-                        raw_text = ocr_res[0][1]
-                        ocr_confidence = float(ocr_res[0][2])
-                        cleaned = self.clean_plate(raw_text)
+                            if ocr_confidence >= self.OCR_CONF_THRESHOLD:
+                                cleaned = self.clean_plate(raw_text)
+                                if self.is_valid_alphanumeric_plate(cleaned):
+                                    plate_text = cleaned
+                                    display_str = f"{plate_text} ({ocr_confidence:.2f})"
 
-                        if self.is_valid_alphanumeric_plate(cleaned):
-                            plate_text = cleaned
-                            display_str = f"{plate_text} ({ocr_confidence:.2f})"
+                    current_boxes.append(((x1, y1, x2, y2), display_str))
+                    self.draw_overlay(frame, (x1, y1, x2, y2), display_str)
 
-                self.anpr_last_box = (x1, y1, x2, y2)
-                self.anpr_last_display_str = display_str
-                self.draw_overlay(frame, self.anpr_last_box, self.anpr_last_display_str)
+                    if plate_text:
+                        timestamp_sec = self.anpr_frame_count / fps
+                        self.anpr_all_reads.append((self.anpr_frame_count, timestamp_sec, plate_text, ocr_confidence))
 
-                if plate_text:
-                    timestamp_sec = self.anpr_frame_count / fps
-                    self.anpr_all_reads.append((self.anpr_frame_count, timestamp_sec, plate_text, ocr_confidence))
+                        now = time.time()
+                        last_logged_time, last_best_conf = self.anpr_seen_cooldown.get(plate_text, (0, 0.0))
 
-                    now = time.time()
-                    last_logged_time, last_best_conf = self.anpr_seen_cooldown.get(plate_text, (0, 0.0))
+                        # Cooldown logging to prevent duplicate entries
+                        if (now - last_logged_time > 4.0) or (ocr_confidence > last_best_conf + 0.12):
+                            self.anpr_seen_cooldown[plate_text] = (now, ocr_confidence)
+                            self.log_event("ANPR Detection", "Vehicle Plate", plate_text, ocr_confidence, details=f"Cleaned Read: {plate_text}")
+                            self.export_final_anpr_summary()
 
-                    if (now - last_logged_time > 5.0) or (ocr_confidence > last_best_conf + 0.15):
-                        self.anpr_seen_cooldown[plate_text] = (now, ocr_confidence)
-                        self.log_event("ANPR Detection", "Vehicle Plate", plate_text, ocr_confidence, details=f"Cleaned Read: {plate_text}")
-                        self.export_final_anpr_summary()
+                            ws_alerts.append({
+                                "id": f"INC-{int(now * 1000)}",
+                                "title": f"LICENSE PLATE: {plate_text}",
+                                "cameraId": camera_id,
+                                "confidence": f"{ocr_confidence * 100:.1f}%",
+                                "time": datetime.now().strftime("%H:%M:%S IST"),
+                                "siren": False,
+                                "silent": True
+                            })
+                            print(f"🚗 [ANPR RAW-READ LOGGED]: {plate_text} (Conf: {ocr_confidence:.2f})")
 
-                        # Broadcast alert for UI telemetry (NO database image)
-                        ws_alerts.append({
-                            "id": f"INC-{int(now * 1000)}",
-                            "title": f"LICENSE PLATE: {plate_text}",
-                            "cameraId": camera_id,
-                            "confidence": f"{ocr_confidence * 100:.1f}%",
-                            "time": datetime.now().strftime("%H:%M:%S IST"),
-                            "siren": False,
-                            "silent": True
-                        })
-                        print(f"🚗 [ANPR BEST-READ LOGGED]: {plate_text} (Conf: {ocr_confidence:.2f})")
-
+                self.anpr_last_boxes = current_boxes
             else:
-                self.anpr_last_box = None
-                self.anpr_last_display_str = None
+                self.anpr_last_boxes = []
 
             cv2.rectangle(frame, (0, 0), (w, 32), (20, 20, 20), -1)
             cv2.putText(frame, "GARUDA ANPR CHECKPOST SYSTEM | ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
