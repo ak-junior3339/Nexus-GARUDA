@@ -444,8 +444,8 @@ const GarudaAdmin = {
   async loadEvidenceVault() {
     const tbody = document.getElementById('dossier-table-body');
     const grid = document.getElementById('vault-grid');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #64748b; padding: 30px;">QUERYING DATABASE EVIDENCE LOGS...</td></tr>';
-    if (grid) grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #64748b; font-family: var(--font-mono);">QUERYING DATABASE EVIDENCE PHOTOS...</div>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #64748b; padding: 30px;">SEARCHING DATABASE FOR LOGS...</td></tr>';
+    if (grid) grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: #64748b; font-family: var(--font-mono);">SEARCHING DATABASE FOR IMAGES...</div>';
 
     try {
       const res = await fetch(`${GarudaConfig.API_BASE_URL}/incidents/vault`);
