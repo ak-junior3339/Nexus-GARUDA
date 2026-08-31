@@ -4,9 +4,11 @@ GARUDA: REAL-TIME AI SURVEILLANCE & THREAT DETECTION ENGINE
 Features:
   1. High-Yield Raw Video ANPR (CLAHE Preprocessing, Multi-Plate Detection)
   2. Frame Skipping (FRAME_SKIP = 3) with Multi-Box Caching
-  3. Advanced State Code Resolution (DL, MH, KA, HR, UP, BH, etc. with OCR correction)
-  4. Positional Digit/Letter Disambiguation (O<->0, I<->1, S<->5, Z<->2, B<->8)
-  5. Two-Tiered Full vs. [PARTIAL] Recognition without Track-ID Flapping
+  3. Strict State Code Resolution & OCR Disambiguation (DL, MH, KA, HR, UP, BH, etc.)
+  4. Positional Digit/Letter Correction (O<->0, I<->1, S<->5, Z<->2, B<->8)
+  5. Zero-Garbage Two-Tier Grammar:
+     - Tier 1: Full Indian Plates (State + RTO + Series + 4 Digits)
+     - Tier 2: Valid Head/Tail Partials (e.g. DL01A** or **AB1234)
   6. WatchTower Threat Detection (Intruder, Vehicle Breach, Loiter, Group)
   7. Real-Time PostgreSQL Evidence Snapshots (Base64)
   8. Rolling CSV Retention (Max 2,000 entries -> trims oldest 1,000)
@@ -95,7 +97,8 @@ class GarudaIntegratedAIEngine:
         try:
             self.anpr_model = YOLO(self.ANPR_MODEL_PATH)
         except Exception:
-            self.anpr_model = YOLO("yolov8n.pt")
+            # self.anpr_model = YOLO("yolov8n.pt")
+            print("Cannot load state of art model :)")
 
         self.reader = None
         if EASYOCR_AVAILABLE:
@@ -130,7 +133,7 @@ class GarudaIntegratedAIEngine:
         self.NIGHT_MODE_ENABLED = False
 
         # Raw Video ANPR Settings (Track-Independent)
-        self.FRAME_SKIP = 3
+        self.FRAME_SKIP = 4
         self.MIN_PLATE_LENGTH = 4
         self.DETECTION_CONF_THRESHOLD = 0.25
         self.OCR_CONF_THRESHOLD = 0.25
@@ -142,7 +145,7 @@ class GarudaIntegratedAIEngine:
         self.tripwire_lines = {
             "CAM-02": LineString([(0, 650), (1920, 650)]),
             "CAM-03": LineString([(350, 0), (350, 1080)]),
-            "CAM-04": LineString([(0, 650), (1920, 650)]),
+            "CAM-04": LineString([(0, 0), (0, 0)]),
         }
 
         # Master lookup of valid Indian State / UT / National Codes
@@ -173,7 +176,7 @@ class GarudaIntegratedAIEngine:
         self.CHAR_TO_DIGIT = {'O': '0', 'D': '0', 'Q': '0', 'I': '1', 'L': '1', 'Z': '2', 'S': '5', 'B': '8', 'G': '6'}
         self.CHAR_TO_LETTER = {'0': 'O', '1': 'I', '2': 'Z', '5': 'S', '8': 'B', '6': 'G'}
 
-        # Common roadside noise words
+        # Common roadside noise words to reject immediately
         self.GARBAGE_WORDS = {
             'CARRIER', 'STOP', 'POLICE', 'ARMY', 'NAVY', 'INDIA', 'HSRP', 'DIESEL',
             'PETROL', 'CNG', 'SPEED', 'LIMIT', 'HIGHWAY', 'TOLL', 'TRUCK', 'CAB',
@@ -579,7 +582,7 @@ class GarudaIntegratedAIEngine:
         """
         raw_prefix = raw_prefix.upper()
         
-        # 1. Exact match
+        # 1. Direct valid match
         if raw_prefix in self.VALID_STATE_PREFIXES:
             return True, raw_prefix
             
@@ -683,36 +686,62 @@ class GarudaIntegratedAIEngine:
 
     def classify_plate_candidate(self, text, conf):
         """
-        Strict Two-Tier Classification with State Resolution:
-        - Tier 1: Full Indian/Standard Plate (e.g. DL01AB1234, MH12DE1433, BH22AA1234)
-        - Tier 2: Partial Plate (4 to 7 chars with letters + digits) -> Tagged with ** [PARTIAL]
+        High-Precision Two-Tier Plate Grammar Validator:
+        - Tier 1: Strict Full Plate (Valid State + RTO Digits + Series + 4 Digits)
+        - Tier 2: Guarded Partial Plate (Only valid Head-Partials or Tail-Partials)
         """
         cleaned = self.clean_plate(text)
-        if len(cleaned) < 4 or len(cleaned) > 11:
+        
+        # 1. Length sanity check (Standard Indian plates are 5 to 10 chars)
+        if len(cleaned) < 5 or len(cleaned) > 10:
             return False, False, cleaned
 
-        # Reject common roadside noise words
+        # 2. Reject common roadside noise words
         for bad_word in self.GARBAGE_WORDS:
             if bad_word in cleaned:
                 return False, False, cleaned
 
+        # 3. Reject repetitive pattern clones (e.g. 'AAAAAA', '111111', 'ABABAB')
+        if len(set(cleaned)) < 4:
+            return False, False, cleaned
+
         letter_count = sum(1 for c in cleaned if c.isalpha())
         digit_count = sum(1 for c in cleaned if c.isdigit())
+        
+        # Must have at least 1 letter and at least 1 digit
         if letter_count < 1 or digit_count < 1:
             return False, False, cleaned
 
-        # Tier 1: Strict Indian Plate (2 State Letters + 1-2 RTO digits + optional series + 3-4 digits)
-        full_pattern = r'^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}$'
-        if len(cleaned) >= 8 and re.match(full_pattern, cleaned) and cleaned[:2] in self.VALID_STATE_PREFIXES:
-            return True, True, cleaned
+        state_prefix = cleaned[:2]
+        is_valid_state, resolved_state = self.resolve_state_code(state_prefix)
 
-        # Tier 1 Fallback: Generic Complete Plate (Length 8+)
-        if len(cleaned) >= 8 and letter_count >= 2 and digit_count >= 2 and len(set(cleaned)) >= 4:
-            return True, True, cleaned
+        # -------------------------------------------------------------
+        # TIER 1: STRICT FULL PLATE (Length 8 to 10)
+        # e.g., DL01AB1234, MH12DE1433, KA05S8425, BH22AA1234
+        # -------------------------------------------------------------
+        if len(cleaned) >= 8 and is_valid_state:
+            # Pattern: 2 State Letters + 1-2 RTO Digits + 0-3 Series Letters + 3-4 Digits
+            full_regex = r'^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}$'
+            full_candidate = resolved_state + cleaned[2:]
+            if re.match(full_regex, full_candidate) and full_candidate[2:4].isdigit():
+                return True, True, full_candidate
 
-        # Tier 2: Partial Plate (Length 4 to 7 characters)
-        if 4 <= len(cleaned) <= 7:
-            return True, False, f"{cleaned}** [PARTIAL]"
+        # -------------------------------------------------------------
+        # TIER 2: GUARDED PARTIAL PLATE (Length 5 to 7)
+        # Zero-Garbage Checks: Must be either a Head-Partial or Tail-Partial
+        # -------------------------------------------------------------
+        if 5 <= len(cleaned) <= 7:
+            # Case A: Head-Partial (Starts with Valid State + RTO Digit)
+            # e.g., DL01A, MH12DE, KA05S
+            if is_valid_state and cleaned[2].isdigit():
+                head_candidate = resolved_state + cleaned[2:]
+                return True, False, f"{head_candidate}** [PARTIAL]"
+
+            # Case B: Tail-Partial (1-2 Series Letters + 3-4 Registration Digits)
+            # e.g., AB1234, DE1433, S8425
+            tail_regex = r'^[A-Z]{1,2}[0-9]{3,4}$'
+            if re.match(tail_regex, cleaned):
+                return True, False, f"**{cleaned} [PARTIAL]"
 
         return False, False, cleaned
 
@@ -832,36 +861,3 @@ class GarudaIntegratedAIEngine:
             return frame, []
 
 ai_service = GarudaIntegratedAIEngine()
-
-
-
-    # =========================================================================
-    # FINAL ANPR PIPELINE SPECIFICATION & AUDIT REPORT
-    # =========================================================================
-    # 1. OPTICAL PREPROCESSING:
-    #    - Small plate crops (<240px) are bicubically upscaled to preserve edge sharpness.
-    #    - CLAHE (ClipLimit 2.5, 8x8 grid) normalizes uneven sunlight & shadow glare.
-    #    - Bilateral Filter (d=9, sigma=75) eliminates camera sensor & road dust noise.
-    #
-    # 2. INTELLECTUAL CHARACTER DISAMBIGUATION & POSITIONAL CORRECTION:
-    #    - Pos 0-1 (State Prefix): Resolves letter confusions against 36 Indian/BH codes.
-    #      (e.g., '0L' -> 'DL', '8H' -> 'BH', 'K4' -> 'KA', 'NH' -> 'MH', '1N' -> 'TN').
-    #    - Pos 2-3 (RTO District): Forces numbers on positions 2-3.
-    #      (e.g., 'O1' -> '01', 'I2' -> '12', 'Z5' -> '25', 'S8' -> '58').
-    #    - Tail 4 Chars (Registration Digits): Forces numeric digits for vehicle IDs.
-    #      (e.g., '143O' -> '1430', '842S' -> '8425', '998B' -> '9988').
-    #
-    # 3. TWO-TIER REGEX CLASSIFICATION & NOISE REJECTION:
-    #    - Tier 1 [Full Verified Plate]: (Len 8-11) Matches standard Indian RTO format
-    #      (^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}$) -> Logged clean as 'DL01AB1234'.
-    #    - Tier 2 [Partial Plate]: (Len 4-7) Must contain letters and digits.
-    #      Preserves valuable distant/occluded reads -> Tagged as 'DL01A** [PARTIAL]'.
-    #    - Noise & Sticker Filter: Discards roadside terms ('STOP', 'CARRIER', 'POLICE',
-    #      'DIESEL', 'HSRP') and single-type garbage (pure digits/pure words).
-    #
-    # 4. RESOURCE & BUFFER MANAGEMENT:
-    #    - Frame Skipping (FRAME_SKIP = 3): Drops compute lag by 66% with bounding-box cache.
-    #    - Cooldown Throttle: Logs once every 4.5s per plate (or on +15% confidence jump).
-    #    - Memory & File Safety: Local CSV trims oldest 1,000 rows when exceeding 2,000;
-    #      UI trims oldest 100 alerts when exceeding 200 items (0% PostgreSQL bloat).
-    # =========================================================================
