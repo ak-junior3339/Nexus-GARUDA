@@ -37,7 +37,7 @@ Garuda utilizes specialized AI pipelines and neural network modules tailored for
 | **CAM-01 (Checkpost ANPR)** | Custom YOLOv8 Plate Detector (`anprbest.pt`), EasyOCR, CLAHE + Bilateral Preprocessing, Positional OCR Disambiguation. | Live plate overlay, telemetry feed, and auto-rotated `detection.csv`. |
 | **CAM-02 / 03 / 04 (Watchtower)** | Custom YOLO11/v8 (`WTbest.pt`), ByteTrack trajectory tracking, Shapely polygon intersection, Union-Find clustering. | Intruder alerts, audio siren triggers, and Base64 court-admissible snapshots in PostgreSQL. |
 | **Super-Resolution (Upscaler)** | EDSR ($4\times$) Deep Super-Resolution network for enhancing low-resolution security/surveillance captures and license plates. | Enhanced high-fidelity plate & suspect crops. |
-| **Facial Recognition (FRS)** | High-accuracy face detection and embedding verification against registered threat databases (`Archil_facenet`). | Suspect identity matching and watchlist alerts. |
+| **Facial Recognition (FRS)** | High-accuracy face detection and embedding verification against registered threat databases. | Suspect identity matching and watchlist alerts. |
 | **Adaptive Night Vision** | Automated scene brightness evaluation and CLAHE in LAB color space for dark-environment clarity. | Low-light contrast-enhanced video stream. |
 
 ---
@@ -119,12 +119,12 @@ A high-performance vehicle identification pipeline designed to capture, isolate,
 
 | Team Member | Core Responsibilities |
 | :--- | :--- |
-| **Akshat Jain** | Full-Stack Architecture, Admin Evidence Vault, REST APIs & Documentation |
-| **Archil Jakhetiya** | AI & ML Modeling (Facial Recognition & Deep Learning Pipelines) |
-| **Gourvi Jain** | Frontend UI/UX Engineering, Database Schema & Threat Analytics |
-| **Harshil Soni** | Backend Engineering, SQLAlchemy ORM & Multi-Camera Streaming |
-| **Khushvardhan Johari** | Frontend State Management, WebSocket Telemetry & Presentation |
-| **Aishwarya Kumar Singh (ak_junior)** | Computer Vision Architect (Watchtower & ANPR Engine Pipelines) |
+| **Akshat Jain** | Frontend UI/UX and Captcha |
+| **Archil Jakhetiya** | AI & ML Modeling (Facial Recognition)|
+| **Gourvi Jain** | Frontend UI/UX Engineering, Database Schema |
+| **Harshil Soni** | Frontend and Auth |
+| **Khushvardhan Johari** | Frontend, Backend & Database |
+| **Aishwarya Kumar Singh (ak_junior)** | Computer Vision Architect, Admin Evidence Vault, AI - Web Integration (Watchtower & ANPR Engine Pipelines) |
 
 ---
 
