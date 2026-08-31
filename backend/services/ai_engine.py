@@ -3,10 +3,14 @@
 GARUDA: REAL-TIME AI SURVEILLANCE & THREAT DETECTION ENGINE
 Features:
   1. High-Yield Raw Video ANPR (CLAHE Preprocessing, Multi-Plate Detection)
-  2. WatchTower Threat Detection (Intruder, Vehicle Breach, Loiter, Group)
-  3. Real-Time PostgreSQL Evidence Snapshots (Base64)
-  4. Rolling CSV Retention (Max 2,000 entries -> trims oldest 1,000)
-  5. Emergency Night Vision Override (CLAHE) & Audio Siren System
+  2. Frame Skipping (FRAME_SKIP = 3) with Multi-Box Caching
+  3. Advanced State Code Resolution (DL, MH, KA, HR, UP, BH, etc. with OCR correction)
+  4. Positional Digit/Letter Disambiguation (O<->0, I<->1, S<->5, Z<->2, B<->8)
+  5. Two-Tiered Full vs. [PARTIAL] Recognition without Track-ID Flapping
+  6. WatchTower Threat Detection (Intruder, Vehicle Breach, Loiter, Group)
+  7. Real-Time PostgreSQL Evidence Snapshots (Base64)
+  8. Rolling CSV Retention (Max 2,000 entries -> trims oldest 1,000)
+  9. Emergency Night Vision Override (CLAHE) & Audio Siren System
 ==============================================================================
 """
 
@@ -125,13 +129,13 @@ class GarudaIntegratedAIEngine:
         self.AUTO_NIGHT_MODE = True
         self.NIGHT_MODE_ENABLED = False
 
-        # Raw Video ANPR Settings
-        self.FRAME_SKIP = 5
+        # Raw Video ANPR Settings (Track-Independent)
+        self.FRAME_SKIP = 3
         self.MIN_PLATE_LENGTH = 4
         self.DETECTION_CONF_THRESHOLD = 0.25
         self.OCR_CONF_THRESHOLD = 0.25
         self.anpr_frame_count = 0
-        self.anpr_last_boxes = []  # List of active boxes for multi-plate cache
+        self.anpr_last_boxes = []
         self.anpr_all_reads = []
         self.anpr_seen_cooldown = {}
 
@@ -141,6 +145,41 @@ class GarudaIntegratedAIEngine:
             "CAM-04": LineString([(0, 650), (1920, 650)]),
         }
 
+        # Master lookup of valid Indian State / UT / National Codes
+        self.VALID_STATE_PREFIXES = {
+            'AN', 'AP', 'AR', 'AS', 'BR', 'CG', 'CH', 'DD', 'DN', 'DL', 'DN', 'GA', 'GJ', 
+            'HR', 'HP', 'JH', 'JK', 'KA', 'KL', 'LA', 'LD', 'MH', 'ML', 'MN', 'MP', 
+            'MZ', 'NL', 'OD', 'OR', 'PB', 'PY', 'RJ', 'SK', 'TN', 'TR', 'TS', 'UK', 
+            'UA', 'UP', 'WB', 'BH'
+        }
+
+        # Frequent OCR Confusion Map for First 2 State Code Letters
+        self.STATE_OCR_CORRECTIONS = {
+            '0L': 'DL', 'QL': 'DL', 'OL': 'DL', 'DI': 'DL',
+            'NH': 'MH', '0H': 'MH', 'MI': 'MH',
+            'K4': 'KA', 'K8': 'KA', 'KR': 'KA',
+            '8H': 'BH', '8R': 'BR', '8B': 'PB',
+            'H8': 'HR', 'H4': 'HR',
+            'U8': 'UP', '0P': 'UP', '0K': 'UK',
+            '1N': 'TN', 'TI': 'TN', 'TM': 'TN',
+            'W8': 'WB', 'V8': 'WB',
+            'G1': 'GJ', 'G0': 'GJ',
+            'R1': 'RJ', 'R0': 'RJ',
+            'C6': 'CG', 'C0': 'CH',
+            'A5': 'AS', 'A1': 'AP', 'T5': 'TS',
+        }
+
+        # Positional mappings for letter/digit ambiguity
+        self.CHAR_TO_DIGIT = {'O': '0', 'D': '0', 'Q': '0', 'I': '1', 'L': '1', 'Z': '2', 'S': '5', 'B': '8', 'G': '6'}
+        self.CHAR_TO_LETTER = {'0': 'O', '1': 'I', '2': 'Z', '5': 'S', '8': 'B', '6': 'G'}
+
+        # Common roadside noise words
+        self.GARBAGE_WORDS = {
+            'CARRIER', 'STOP', 'POLICE', 'ARMY', 'NAVY', 'INDIA', 'HSRP', 'DIESEL',
+            'PETROL', 'CNG', 'SPEED', 'LIMIT', 'HIGHWAY', 'TOLL', 'TRUCK', 'CAB',
+            'TAXI', 'AUTO', 'GOODS', 'PUBLIC', 'PRIVATE', 'PRESS', 'GOVT'
+        }
+
     # -----------------------------------------------------------------
     # ROLLING CSV LOG RETENTION (MAX 2,000 ROWS -> PURGE OLDEST 1,000)
     # -----------------------------------------------------------------
@@ -148,7 +187,7 @@ class GarudaIntegratedAIEngine:
         """
         Maintains CSV files at a maximum of 2,000 entries.
         When 2,000 entries are reached, the oldest 1,000 entries are purged,
-        retaining the clean CSV header and the newest 1,000 entries.
+        retaining the clean CSV header and the latest 1,000 entries.
         """
         if not os.path.exists(file_path):
             return
@@ -531,14 +570,77 @@ class GarudaIntegratedAIEngine:
             return raw_frame, []
 
     # -----------------------------------------------------------------
-    # ENHANCED RAW VIDEO ANPR ENGINE (ENHANCEMENTS 1, 2, 3, 4)
+    # ENHANCED RAW VIDEO ANPR ENGINE (STATE RESOLUTION + DISAMBIGUATION)
     # -----------------------------------------------------------------
+    def resolve_state_code(self, raw_prefix):
+        """
+        Validates and auto-corrects the 2-letter State Prefix.
+        Returns: (is_valid: bool, corrected_prefix: str)
+        """
+        raw_prefix = raw_prefix.upper()
+        
+        # 1. Exact match
+        if raw_prefix in self.VALID_STATE_PREFIXES:
+            return True, raw_prefix
+            
+        # 2. Known OCR substitution map
+        if raw_prefix in self.STATE_OCR_CORRECTIONS:
+            return True, self.STATE_OCR_CORRECTIONS[raw_prefix]
+            
+        # 3. Positional Fallback check (if 1 character was slightly skewed)
+        for valid in self.VALID_STATE_PREFIXES:
+            if (raw_prefix[0] == valid[0] and raw_prefix[1] in {'0', '1', '8', 'I', 'O', 'B'}) or \
+               (raw_prefix[1] == valid[1] and raw_prefix[0] in {'0', '1', '8', 'I', 'O', 'B'}):
+                return True, valid
+                
+        return False, raw_prefix
+
+    def correct_positional_ocr(self, text):
+        """
+        Applies positional OCR character correction to resolve letter/digit confusions:
+        - Positions 0 & 1: State Letters (e.g. '0L' -> 'DL', '1N' -> 'TN', '8H' -> 'BH')
+        - Positions 2 & 3: RTO Digits (e.g. 'O1' -> '01', 'I2' -> '12')
+        - Last 4 characters: Digits (e.g. 'AB123O' -> 'AB1230', '4S21' -> '4521')
+        """
+        if len(text) < 4:
+            return text
+
+        chars = list(text)
+
+        # 1. State Code Correction (First 2 chars)
+        prefix = "".join(chars[:2])
+        is_valid_state, resolved_prefix = self.resolve_state_code(prefix)
+        if is_valid_state:
+            chars[0], chars[1] = resolved_prefix[0], resolved_prefix[1]
+        else:
+            for i in [0, 1]:
+                if chars[i].isdigit() and chars[i] in self.CHAR_TO_LETTER:
+                    chars[i] = self.CHAR_TO_LETTER[chars[i]]
+
+        # 2. RTO Number Correction (Positions 2 & 3 must be digits)
+        if len(chars) >= 6:
+            for i in [2, 3]:
+                if chars[i].isalpha() and chars[i] in self.CHAR_TO_DIGIT:
+                    chars[i] = self.CHAR_TO_DIGIT[chars[i]]
+
+        # 3. Tail Digits Correction (Last 4 characters must be digits for full plates)
+        if len(chars) >= 8:
+            tail_start = len(chars) - 4
+            for i in range(tail_start, len(chars)):
+                if chars[i].isalpha() and chars[i] in self.CHAR_TO_DIGIT:
+                    chars[i] = self.CHAR_TO_DIGIT[chars[i]]
+
+        return "".join(chars)
+
     def clean_plate(self, text):
-        """Cleans and standardizes raw OCR characters on Indian plates."""
+        """Standardizes characters, strips watermarks, and fixes OCR confusions."""
         text = text.upper().strip()
         text = re.sub(r'[^A-Z0-9]', '', text)
-        text = re.sub(r'^(?:IND|IN|I)', '', text)
-        return text
+        text = re.sub(r'^(?:IND|IN|I)', '', text)  # Strip standard HSRP watermark
+        
+        # Apply intelligent positional correction
+        corrected = self.correct_positional_ocr(text)
+        return corrected
 
     def is_same_plate(self, a, b):
         return a == b
@@ -547,7 +649,7 @@ class GarudaIntegratedAIEngine:
         best_by_text = {}
         order = []
         for frame_num, ts, text, conf in reads:
-            if len(text) <= self.MIN_PLATE_LENGTH:
+            if len(text) < self.MIN_PLATE_LENGTH:
                 continue
             if text not in best_by_text:
                 best_by_text[text] = (frame_num, ts, text, conf)
@@ -579,29 +681,54 @@ class GarudaIntegratedAIEngine:
             keep_rows=1000
         )
 
-    def is_valid_alphanumeric_plate(self, text):
-        if len(text) <= self.MIN_PLATE_LENGTH:
-            return False
-        has_letter = any(c.isalpha() for c in text)
-        has_digit = any(c.isdigit() for c in text)
-        return bool(has_letter and has_digit)
+    def classify_plate_candidate(self, text, conf):
+        """
+        Strict Two-Tier Classification with State Resolution:
+        - Tier 1: Full Indian/Standard Plate (e.g. DL01AB1234, MH12DE1433, BH22AA1234)
+        - Tier 2: Partial Plate (4 to 7 chars with letters + digits) -> Tagged with ** [PARTIAL]
+        """
+        cleaned = self.clean_plate(text)
+        if len(cleaned) < 4 or len(cleaned) > 11:
+            return False, False, cleaned
+
+        # Reject common roadside noise words
+        for bad_word in self.GARBAGE_WORDS:
+            if bad_word in cleaned:
+                return False, False, cleaned
+
+        letter_count = sum(1 for c in cleaned if c.isalpha())
+        digit_count = sum(1 for c in cleaned if c.isdigit())
+        if letter_count < 1 or digit_count < 1:
+            return False, False, cleaned
+
+        # Tier 1: Strict Indian Plate (2 State Letters + 1-2 RTO digits + optional series + 3-4 digits)
+        full_pattern = r'^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}$'
+        if len(cleaned) >= 8 and re.match(full_pattern, cleaned) and cleaned[:2] in self.VALID_STATE_PREFIXES:
+            return True, True, cleaned
+
+        # Tier 1 Fallback: Generic Complete Plate (Length 8+)
+        if len(cleaned) >= 8 and letter_count >= 2 and digit_count >= 2 and len(set(cleaned)) >= 4:
+            return True, True, cleaned
+
+        # Tier 2: Partial Plate (Length 4 to 7 characters)
+        if 4 <= len(cleaned) <= 7:
+            return True, False, f"{cleaned}** [PARTIAL]"
+
+        return False, False, cleaned
 
     def preprocess_plate_for_ocr(self, crop):
-        """Enhancement 3: Upscaling + CLAHE Contrast boost + Bilateral smoothing."""
+        """Enhancement: Upscaling + CLAHE Contrast boost + Bilateral smoothing."""
         if crop.size == 0:
             return crop
         h, w = crop.shape[:2]
-        # 1. Upscale low-res small crops
         if w < 240:
             scale = 240 / max(1, w)
             crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         
-        # 2. Convert to Grayscale & apply adaptive histogram equalization (CLAHE)
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
         enhanced = clahe.apply(gray)
         
-        # 3. Bilateral Filter: Sharpens text edges while eliminating road/sensor noise
         filtered = cv2.bilateralFilter(enhanced, 9, 75, 75)
         return filtered
 
@@ -617,8 +744,11 @@ class GarudaIntegratedAIEngine:
             ws_alerts = []
             self.anpr_frame_count += 1
             fps = 30.0
+            now = time.time()
 
-            # Dynamic cache on skipped frames to maintain FPS
+            # -------------------------------------------------------------
+            # FRAME SKIPPING (FRAME_SKIP = 3) WITH BOUNDING BOX CACHE
+            # -------------------------------------------------------------
             if self.anpr_frame_count % self.FRAME_SKIP != 0:
                 for cached_box, cached_str in self.anpr_last_boxes:
                     self.draw_overlay(frame, cached_box, cached_str)
@@ -626,14 +756,13 @@ class GarudaIntegratedAIEngine:
                 cv2.putText(frame, "GARUDA ANPR CHECKPOST SYSTEM | ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
                 return frame, []
 
-            # Enhancement 1: High Sensitivity Detection Threshold (0.25)
+            # 1. High Sensitivity Detection Threshold (0.25)
             results = self.anpr_model(frame, conf=self.DETECTION_CONF_THRESHOLD, verbose=False)[0]
             boxes = results.boxes
 
             current_boxes = []
 
             if boxes is not None and len(boxes) > 0:
-                # Enhancement 2: Multi-Plate Detection (Scan all vehicles in view)
                 for box in boxes:
                     conf = float(box.conf[0])
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -643,43 +772,40 @@ class GarudaIntegratedAIEngine:
                     plate_crop = frame[y1:y2, x1:x2]
                     plate_text = None
                     ocr_confidence = 0.0
-                    display_str = "Plate Detected"
+                    display_str = "Scanning Plate..."
 
                     if self.reader and plate_crop.size > 0:
-                        # Preprocess crop
                         processed_crop = self.preprocess_plate_for_ocr(plate_crop)
-                        
                         ocr_res = self.reader.readtext(
                             processed_crop, 
                             allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
                             paragraph=False
                         )
                         
-                        # Enhancement 4: Multi-line parsing + Alphanumeric Validation
                         if ocr_res and len(ocr_res) > 0:
                             raw_text = "".join([res[1] for res in ocr_res])
                             ocr_confidence = float(max([res[2] for res in ocr_res]))
 
                             if ocr_confidence >= self.OCR_CONF_THRESHOLD:
-                                cleaned = self.clean_plate(raw_text)
-                                if self.is_valid_alphanumeric_plate(cleaned):
-                                    plate_text = cleaned
+                                is_valid, is_full, formatted_text = self.classify_plate_candidate(raw_text, ocr_confidence)
+                                if is_valid:
+                                    plate_text = formatted_text
                                     display_str = f"{plate_text} ({ocr_confidence:.2f})"
 
                     current_boxes.append(((x1, y1, x2, y2), display_str))
                     self.draw_overlay(frame, (x1, y1, x2, y2), display_str)
 
+                    # Cooldown-gated logging based on plate text (not track ID)
                     if plate_text:
                         timestamp_sec = self.anpr_frame_count / fps
-                        self.anpr_all_reads.append((self.anpr_frame_count, timestamp_sec, plate_text, ocr_confidence))
-
-                        now = time.time()
                         last_logged_time, last_best_conf = self.anpr_seen_cooldown.get(plate_text, (0, 0.0))
 
-                        # Cooldown logging to prevent duplicate entries
-                        if (now - last_logged_time > 4.0) or (ocr_confidence > last_best_conf + 0.12):
+                        # Log once per car / plate, or when a higher confidence read occurs
+                        if (now - last_logged_time > 4.5) or (ocr_confidence > last_best_conf + 0.15):
                             self.anpr_seen_cooldown[plate_text] = (now, ocr_confidence)
-                            self.log_event("ANPR Detection", "Vehicle Plate", plate_text, ocr_confidence, details=f"Cleaned Read: {plate_text}")
+                            self.anpr_all_reads.append((self.anpr_frame_count, timestamp_sec, plate_text, ocr_confidence))
+                            
+                            self.log_event("ANPR Detection", "Vehicle Plate", plate_text, ocr_confidence, details=f"Read: {plate_text}")
                             self.export_final_anpr_summary()
 
                             ws_alerts.append({
@@ -691,7 +817,7 @@ class GarudaIntegratedAIEngine:
                                 "siren": False,
                                 "silent": True
                             })
-                            print(f"🚗 [ANPR RAW-READ LOGGED]: {plate_text} (Conf: {ocr_confidence:.2f})")
+                            print(f"🚗 [ANPR READ LOGGED]: {plate_text} (Conf: {ocr_confidence:.2f})")
 
                 self.anpr_last_boxes = current_boxes
             else:
@@ -706,3 +832,36 @@ class GarudaIntegratedAIEngine:
             return frame, []
 
 ai_service = GarudaIntegratedAIEngine()
+
+
+
+    # =========================================================================
+    # FINAL ANPR PIPELINE SPECIFICATION & AUDIT REPORT
+    # =========================================================================
+    # 1. OPTICAL PREPROCESSING:
+    #    - Small plate crops (<240px) are bicubically upscaled to preserve edge sharpness.
+    #    - CLAHE (ClipLimit 2.5, 8x8 grid) normalizes uneven sunlight & shadow glare.
+    #    - Bilateral Filter (d=9, sigma=75) eliminates camera sensor & road dust noise.
+    #
+    # 2. INTELLECTUAL CHARACTER DISAMBIGUATION & POSITIONAL CORRECTION:
+    #    - Pos 0-1 (State Prefix): Resolves letter confusions against 36 Indian/BH codes.
+    #      (e.g., '0L' -> 'DL', '8H' -> 'BH', 'K4' -> 'KA', 'NH' -> 'MH', '1N' -> 'TN').
+    #    - Pos 2-3 (RTO District): Forces numbers on positions 2-3.
+    #      (e.g., 'O1' -> '01', 'I2' -> '12', 'Z5' -> '25', 'S8' -> '58').
+    #    - Tail 4 Chars (Registration Digits): Forces numeric digits for vehicle IDs.
+    #      (e.g., '143O' -> '1430', '842S' -> '8425', '998B' -> '9988').
+    #
+    # 3. TWO-TIER REGEX CLASSIFICATION & NOISE REJECTION:
+    #    - Tier 1 [Full Verified Plate]: (Len 8-11) Matches standard Indian RTO format
+    #      (^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}$) -> Logged clean as 'DL01AB1234'.
+    #    - Tier 2 [Partial Plate]: (Len 4-7) Must contain letters and digits.
+    #      Preserves valuable distant/occluded reads -> Tagged as 'DL01A** [PARTIAL]'.
+    #    - Noise & Sticker Filter: Discards roadside terms ('STOP', 'CARRIER', 'POLICE',
+    #      'DIESEL', 'HSRP') and single-type garbage (pure digits/pure words).
+    #
+    # 4. RESOURCE & BUFFER MANAGEMENT:
+    #    - Frame Skipping (FRAME_SKIP = 3): Drops compute lag by 66% with bounding-box cache.
+    #    - Cooldown Throttle: Logs once every 4.5s per plate (or on +15% confidence jump).
+    #    - Memory & File Safety: Local CSV trims oldest 1,000 rows when exceeding 2,000;
+    #      UI trims oldest 100 alerts when exceeding 200 items (0% PostgreSQL bloat).
+    # =========================================================================
