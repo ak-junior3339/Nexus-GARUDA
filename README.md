@@ -178,3 +178,13 @@ python main.py
 python -m http.server 5500
 ```
 Open `http://localhost:5500/frontend/login.html` in your browser.
+
+
+
+### todo : 
+* 1- Adding audio based features (Gunshots,Crown noise)
+* 2- Facial recognition
+* 3- admin logs
+* 4- Group convergence coordinates 
+* 5-  Multi-Camera Cross-Tracking (Re-ID): Implement lightweight feature vector embeddings (Re-Identification) to track the same suspect across multiple BOP camera feeds without needing facial recognition.
+* 6- Directional Threat Vectoring: Calculate real-time speed, heading angle, and predicted path (e.g., "Target moving 12 km/h SSW toward Post 4"), elevating raw bounding boxes into military tactical telemetry.
