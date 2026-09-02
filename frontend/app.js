@@ -114,6 +114,39 @@ const GarudaAuthStore = {
 };
 
 /* ---------------------------------------------------------------------------
+   3.5 AUDIT LOG STORE (Max 100 entries)
+   --------------------------------------------------------------------------- */
+const GarudaAuditStore = {
+  KEY: 'garuda_audit_logs',
+  getLogs() {
+    try {
+      return JSON.parse(localStorage.getItem(this.KEY)) || [];
+    } catch {
+      return [];
+    }
+  },
+  addLog(user, activity) {
+    let logs = this.getLogs();
+    const now = new Date();
+    
+    // Add new log to the top of the array
+    logs.unshift({
+      date: now.toLocaleDateString('en-IN'),
+      time: now.toLocaleTimeString('en-IN', { hour12: false }),
+      user: user,
+      activity: activity
+    });
+
+    // Auto-clear logic: Keep only the latest 100 logs
+    if (logs.length > 100) {
+      logs = logs.slice(0, 100); 
+    }
+    
+    localStorage.setItem(this.KEY, JSON.stringify(logs));
+  }
+};
+
+/* ---------------------------------------------------------------------------
    4. AUTH FLOWS
    --------------------------------------------------------------------------- */
 const GarudaAuth = {
@@ -183,6 +216,7 @@ const GarudaAuth = {
       }
 
       GarudaAuthStore.setSession(session);
+      GarudaAuditStore.addLog(userId, 'USER LOGGED IN');
       statusEl.textContent = 'ACCESS GRANTED. REDIRECTING…';
       window.location.href = redirectTo;
     } catch (err) {
@@ -193,6 +227,10 @@ const GarudaAuth = {
   },
 
   async logout(redirectTo = 'login.html') {
+    const session = GarudaAuthStore.getSession();
+    if (session) {
+      GarudaAuditStore.addLog(session.userId, 'USER LOGGED OUT');
+    }
     try {
       if (GarudaConfig.BACKEND_ENABLED) await GarudaAPI.logout();
     } catch {
@@ -401,6 +439,7 @@ const GarudaAdmin = {
     this._bindLogout();
     this._bindOperatorActions();
     this._bindProvisionModal();
+    this._bindAuditModal();
     this._loadOperators();
     this.loadEvidenceVault();
   },
@@ -682,6 +721,55 @@ const GarudaAdmin = {
         GarudaToast.show(`Provisioning failed: ${err.message}`, 'error');
       }
     };
+  },
+
+  _bindAuditModal() {
+    const overlay = document.getElementById('audit-logs-modal');
+    const openBtn = document.getElementById('open-audit-modal');
+    const closeBtn = document.getElementById('close-audit-modal');
+
+    if (!overlay || !openBtn) return;
+
+    openBtn.onclick = (e) => {
+      e.preventDefault();
+      this._renderAuditLogs();
+      overlay.classList.add('is-open');
+    };
+
+    if (closeBtn) {
+      closeBtn.onclick = (e) => {
+        e.preventDefault();
+        overlay.classList.remove('is-open');
+      };
+    }
+  },
+
+  _renderAuditLogs() {
+    const tbody = document.getElementById('audit-log-tbody');
+    if (!tbody) return;
+
+    const logs = GarudaAuditStore.getLogs();
+
+    if (logs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: rgba(255,255,255,0.3); padding: 30px;">NO AUDIT LOGS RECORDED.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = '';
+    logs.forEach(log => {
+      let activityColor = '#94a3b8';
+      if (log.activity.includes('LOGGED IN')) activityColor = '#4ade80';
+      if (log.activity.includes('LOGGED OUT')) activityColor = '#ef4444';
+
+      tbody.innerHTML += `
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">
+          <td style="padding: 10px 14px; color: #e2e8f0;">${log.date}</td>
+          <td style="padding: 10px 14px; color: #94a3b8;">${log.time}</td>
+          <td style="padding: 10px 14px; color: #818cf8; font-weight: bold;">${log.user}</td>
+          <td style="padding: 10px 14px; color: ${activityColor}; font-weight: bold;">${log.activity}</td>
+        </tr>
+      `;
+    });
   },
 
   _appendOperatorRow({ user_id, full_name, clearance_level, status = 'offline' }) {

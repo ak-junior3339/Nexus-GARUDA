@@ -43,7 +43,7 @@ except ImportError:
 
 
 class GarudaIntegratedAIEngine:
-    def __init__(self, base_dir="/Users/ak_junior/Desktop/Nexus-Garuda"):
+    def __init__(self, base_dir="/Users/khush07/Nexus-GARUDA/Nexus-GARUDA"):
         self.base_dir = base_dir
 
         # -------------------------------------------------------------

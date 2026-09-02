@@ -103,9 +103,9 @@ async def websocket_alerts(websocket: WebSocket, token: str = None):
 
 # 7. CAMERA INPUT SOURCES
 CAMERA_SOURCES = {
-    "CAM-01": "/Users/ak_junior/Desktop/Nexus-Garuda/ANPR/input-videos/I_want_to_remove_the_ANPR_dete.mp4",
-    "CAM-02": "/Users/ak_junior/Desktop/Nexus-Garuda/WatchTower surveillance/test-input/15396176_1920_1080_25fps.mp4",
-    "CAM-03": "/Users/ak_junior/Desktop/Nexus-Garuda/WatchTower surveillance/test-input/15396218_1920_1080_25fps.mp4",
+    "CAM-01": "/Users/khush07/Nexus-GARUDA/Nexus-GARUDA/ANPR/input-videos/I_want_to_remove_the_ANPR_dete.mp4",
+    "CAM-02": "/Users/khush07/Nexus-GARUDA/Nexus-GARUDA/WatchTower surveillance/test-input/15396176_1920_1080_25fps.mp4",
+    "CAM-03": "/Users/khush07/Nexus-GARUDA/Nexus-GARUDA/WatchTower surveillance/test-input/15396218_1920_1080_25fps.mp4",
     "CAM-04": 0
 }
 
