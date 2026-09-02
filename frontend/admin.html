@@ -256,7 +256,12 @@
     <section class="admin-section">
       <div class="admin-section__head" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <h2 style="font-family: var(--font-mono); font-size: 16px;">OPERATOR &amp; SESSION CONTROL</h2>
-        <button type="button" class="btn-primary" id="open-provision-modal" style="background: #3b42a4; color: #fff; border: 1px solid #818cf8; padding: 6px 14px; font-family: var(--font-mono); cursor: pointer;">+ PROVISION NEW OPERATOR</button>
+        <div style="display: flex; gap: 10px;">
+          <!-- AUDIT BUTTON -->
+          <button type="button" class="btn-primary" id="open-audit-modal" style="background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 14px; font-family: var(--font-mono); cursor: pointer;">ADMIN AUDIT LOGS</button>
+          
+          <button type="button" class="btn-primary" id="open-provision-modal" style="background: #3b42a4; color: #fff; border: 1px solid #818cf8; padding: 6px 14px; font-family: var(--font-mono); cursor: pointer;">+ PROVISION NEW OPERATOR</button>
+        </div>
       </div>
 
       <div class="admin-table-wrap" style="background: #0a0f1d; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden;">
@@ -370,6 +375,34 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ============================= ADMIN AUDIT LOGS MODAL ============================= -->
+  <div class="modal-overlay" id="audit-logs-modal">
+    <div class="modal-card" style="background: #0a0f1d; border: 1px solid #3b42a4; padding: 24px; max-width: 600px; width: 100%; border-radius: 4px; font-family: var(--font-mono);">
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="color: #fff; font-size: 15px; font-weight: bold; text-align: left;">ADMIN AUDIT LOGS</h3>
+        <button type="button" id="close-audit-modal" style="background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+
+      <div style="max-height: 400px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; background: #04060c;">
+        <table style="width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 11px;">
+          <thead style="position: sticky; top: 0; background: #04060c; border-bottom: 1px solid rgba(255,255,255,0.08);">
+            <tr style="color: #94a3b8; text-align: left;">
+              <th style="padding: 10px 14px;">DATE</th>
+              <th style="padding: 10px 14px;">TIME</th>
+              <th style="padding: 10px 14px;">USER</th>
+              <th style="padding: 10px 14px;">ACTIVITY</th>
+            </tr>
+          </thead>
+          <tbody id="audit-log-tbody">
+            <!-- Rendered dynamically via JS -->
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 
