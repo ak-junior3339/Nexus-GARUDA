@@ -171,9 +171,8 @@ class GarudaIntegratedAIEngine:
         self.anpr_seen_cooldown = {}
 
         self.tripwire_lines = {
-            "CAM-02": LineString([(60, 520), (1860, 520)]),
-            "CAM-03": LineString([(100, 480), (1820, 480)]),
-            "CAM-04": LineString([(0, 650), (1920, 650)]),
+            "CAM-02": LineString([(0, 650), (1920, 650)]),
+            "CAM-03": LineString([(350, 0), (350, 1080)]),
         }
 
         # Master lookup of valid Indian State / UT / National Codes
