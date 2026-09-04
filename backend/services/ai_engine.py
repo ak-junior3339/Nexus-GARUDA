@@ -1,18 +1,17 @@
 """
 ==============================================================================
-GARUDA: REAL-TIME AI SURVEILLANCE & THREAT DETECTION ENGINE
+GARUDA: REAL-TIME AI SURVEILLANCE & MULTI-MODAL THREAT DETECTION ENGINE
 Features:
   1. High-Yield Raw Video ANPR (CLAHE Preprocessing, Multi-Plate Detection)
   2. Frame Skipping (FRAME_SKIP = 3) with Multi-Box Caching
   3. Strict State Code Resolution & OCR Disambiguation (DL, MH, KA, HR, UP, BH, etc.)
   4. Positional Digit/Letter Correction (O<->0, I<->1, S<->5, Z<->2, B<->8)
-  5. Zero-Garbage Two-Tier Grammar:
-     - Tier 1: Full Indian Plates (State + RTO + Series + 4 Digits)
-     - Tier 2: Valid Head/Tail Partials (e.g. DL01A** or **AB1234)
-  6. WatchTower Threat Detection (Intruder, Vehicle Breach, Loiter, Group)
-  7. Real-Time PostgreSQL Evidence Snapshots (Base64)
-  8. Rolling CSV Retention (Max 2,000 entries -> trims oldest 1,000)
-  9. Emergency Night Vision Override (CLAHE) & Audio Siren System
+  5. Two-Tier Grammar Filter (Full Plates + Guarded Partials)
+  6. WatchTower Perimeter Engine (Intruder, Vehicle Breach, Loiter, Group)
+  7. CAM-04 YAMNet Acoustic Threat Detector (Gunshots, Explosions, Crowd Distress)
+  8. Real-Time PostgreSQL Evidence Snapshots (Base64)
+  9. Rolling CSV Retention (Max 2,000 entries -> trims oldest 1,000)
+  10. Emergency Night Vision Override (CLAHE) & Audio Siren System
 ==============================================================================
 """
 
@@ -20,9 +19,13 @@ import os
 import re
 import cv2
 import csv
+import ssl
 import math
 import time
+import queue
 import base64
+import certifi
+import threading
 import torch
 import pygame
 import numpy as np
@@ -35,11 +38,27 @@ from ultralytics import YOLO
 from db.database import SessionLocal
 from db import models
 
+# Configure SSL certificates for TensorFlow Hub
+os.environ.setdefault('SSL_CERT_FILE', certifi.where())
+os.environ.setdefault('REQUESTS_CA_BUNDLE', certifi.where())
+os.environ.setdefault('CURL_CA_BUNDLE', certifi.where())
+ssl._create_default_https_context = lambda: ssl.create_default_context(cafile=certifi.where())
+
 try:
     import easyocr
     EASYOCR_AVAILABLE = True
 except ImportError:
     EASYOCR_AVAILABLE = False
+
+try:
+    import sounddevice as sd
+    import tensorflow as tf
+    import tensorflow_hub as hub
+    AUDIO_THREAT_AVAILABLE = True
+    print("✅ [GARUDA AUDIO] TensorFlow, TF-Hub & SoundDevice successfully imported.")
+except Exception as e:
+    print(f"⚠️ [GARUDA AUDIO] Audio modules failed to load: {e}")
+    AUDIO_THREAT_AVAILABLE = False
 
 
 class GarudaIntegratedAIEngine:
@@ -59,8 +78,9 @@ class GarudaIntegratedAIEngine:
         self.CAR_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "car")
         self.LOITER_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "loitering")
         self.GROUP_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "group_clustering")
+        self.AUDIO_LOG_DIR = os.path.join(self.BREACH_LOG_DIR, "audio_threats")
 
-        for d in [self.PARENT_LOG_DIR, self.BREACH_LOG_DIR, self.PERSON_LOG_DIR, self.CAR_LOG_DIR, self.LOITER_LOG_DIR, self.GROUP_LOG_DIR]:
+        for d in [self.PARENT_LOG_DIR, self.BREACH_LOG_DIR, self.PERSON_LOG_DIR, self.CAR_LOG_DIR, self.LOITER_LOG_DIR, self.GROUP_LOG_DIR, self.AUDIO_LOG_DIR]:
             os.makedirs(d, exist_ok=True)
 
         self.ALL_OBJECTS_CSV_LOG = os.path.join(self.PARENT_LOG_DIR, "surveillance_log.csv")
@@ -97,8 +117,7 @@ class GarudaIntegratedAIEngine:
         try:
             self.anpr_model = YOLO(self.ANPR_MODEL_PATH)
         except Exception:
-            # self.anpr_model = YOLO("yolov8n.pt")
-            print("Cannot load state of art model :)")
+            self.anpr_model = YOLO("yolov8n.pt")
 
         self.reader = None
         if EASYOCR_AVAILABLE:
@@ -132,8 +151,8 @@ class GarudaIntegratedAIEngine:
         self.AUTO_NIGHT_MODE = True
         self.NIGHT_MODE_ENABLED = False
 
-        # Raw Video ANPR Settings (Track-Independent)
-        self.FRAME_SKIP = 4
+        # Raw Video ANPR Settings
+        self.FRAME_SKIP = 3
         self.MIN_PLATE_LENGTH = 4
         self.DETECTION_CONF_THRESHOLD = 0.25
         self.OCR_CONF_THRESHOLD = 0.25
@@ -143,9 +162,9 @@ class GarudaIntegratedAIEngine:
         self.anpr_seen_cooldown = {}
 
         self.tripwire_lines = {
-            "CAM-02": LineString([(0, 650), (1920, 650)]),
-            "CAM-03": LineString([(350, 0), (350, 1080)]),
-            "CAM-04": LineString([(0, 0), (0, 0)]),
+            "CAM-02": LineString([(60, 520), (1860, 520)]),
+            "CAM-03": LineString([(100, 480), (1820, 480)]),
+            "CAM-04": LineString([(0, 650), (1920, 650)]),
         }
 
         # Master lookup of valid Indian State / UT / National Codes
@@ -183,15 +202,165 @@ class GarudaIntegratedAIEngine:
             'TAXI', 'AUTO', 'GOODS', 'PUBLIC', 'PRIVATE', 'PRESS', 'GOVT'
         }
 
+        # -------------------------------------------------------------
+        # 5. YAMNET ACOUSTIC THREAT DETECTOR (CAM-04)
+        # -------------------------------------------------------------
+        self.audio_threat_enabled = AUDIO_THREAT_AVAILABLE
+        self.audio_alert_queue = queue.Queue()
+        self.active_audio_hud_alerts = []
+        self.SAMPLE_RATE = 16000
+        self.AUDIO_CHUNK_DURATION = 1.0
+
+        self.AUDIO_THREAT_TIERS = {
+            "HIGH": {
+                "label": "GUNFIRE / EXPLOSION",
+                "classes": ["Gunshot, gunfire", "Machine gun", "Fusillade", "Artillery fire", "Explosion"],
+                "threshold": 0.30,
+                "cooldown_sec": 3.0,
+            },
+            "MEDIUM": {
+                "label": "CROWD DISTRESS",
+                "classes": ["Shout", "Yell", "Screaming", "Booing"],
+                "threshold": 0.35,
+                "cooldown_sec": 5.0,
+            },
+        }
+        self.last_audio_alert_time = {tier: 0.0 for tier in self.AUDIO_THREAT_TIERS}
+
+        if self.audio_threat_enabled:
+            try:
+                print("🔊 [GARUDA AUDIO] Initializing YAMNet Threat Model...")
+                self.yamnet_model = hub.load('https://tfhub.dev/google/yamnet/1')
+                class_map_path = self.yamnet_model.class_map_path().numpy()
+                self.yamnet_classes = []
+                with tf.io.gfile.GFile(class_map_path) as csvfile:
+                    for row in csv.DictReader(csvfile):
+                        self.yamnet_classes.append(row['display_name'])
+
+                for tier_name, tier in self.AUDIO_THREAT_TIERS.items():
+                    tier["indices"] = [self.yamnet_classes.index(c) for c in tier["classes"] if c in self.yamnet_classes]
+
+                self._start_audio_listener_thread()
+            except Exception as e:
+                print(f"⚠️ [GARUDA AUDIO] Could not initialize YAMNet: {e}")
+                self.audio_threat_enabled = False
+
+    # -----------------------------------------------------------------
+    # ACOUSTIC THREAT LISTENER WORKER (BACKGROUND DAEMON)
+    # -----------------------------------------------------------------
+    def _audio_stream_callback(self, indata, frames, time_info, status):
+        """Processes continuous live microphone blocks."""
+        if not self.audio_threat_enabled:
+            return
+        waveform = np.squeeze(indata, axis=-1).astype(np.float32)
+        if waveform.size == 0:
+            return
+
+        scores, _, _ = self.yamnet_model(waveform)
+        mean_scores = np.mean(scores.numpy(), axis=0)
+
+        now = time.time()
+        for tier_name, tier in self.AUDIO_THREAT_TIERS.items():
+            best_idx, best_score = None, 0.0
+            for idx in tier["indices"]:
+                score = float(mean_scores[idx])
+                if score > best_score:
+                    best_idx, best_score = idx, score
+
+            if best_idx is not None and best_score >= tier["threshold"]:
+                if (now - self.last_audio_alert_time[tier_name]) >= tier["cooldown_sec"]:
+                    self.last_audio_alert_time[tier_name] = now
+                    detected_sound = self.yamnet_classes[best_idx]
+                    self.audio_alert_queue.put((tier_name, detected_sound, best_score, now))
+                    print(f"🚨 [AUDIO THREAT]: {tier['label']} ({detected_sound}) - Conf: {best_score:.2f}")
+
+    def _start_audio_listener_thread(self):
+        """Spawns microphone listener daemon."""
+        def listener():
+            try:
+                block_size = int(self.SAMPLE_RATE * self.AUDIO_CHUNK_DURATION)
+                with sd.InputStream(
+                    samplerate=self.SAMPLE_RATE,
+                    channels=1,
+                    blocksize=block_size,
+                    dtype='float32',
+                    callback=self._audio_stream_callback
+                ):
+                    while True:
+                        time.sleep(0.5)
+            except Exception as e:
+                print(f"⚠️ [GARUDA AUDIO] Mic listener stopped: {e}")
+
+        t = threading.Thread(target=listener, daemon=True)
+        t.start()
+
+    # -----------------------------------------------------------------
+    # CAM-04 AUDIO-VISUAL PROCESSING PIPELINE
+    # -----------------------------------------------------------------
+    def process_cam4_audio_visual_frame(self, frame, camera_id="CAM-04"):
+        """Processes CAM-04 with Live Audio Threat Overlay & DB logging."""
+        h, w = frame.shape[:2]
+        ws_alerts = []
+        now = time.time()
+
+        # 1. Drain newly received audio alerts
+        while not self.audio_alert_queue.empty():
+            tier_name, detected_sound, confidence, alert_ts = self.audio_alert_queue.get()
+            is_high = (tier_name == "HIGH")
+
+            if is_high:
+                self.play_siren()
+
+            # Save snapshot to Evidence Vault in PostgreSQL
+            self.save_watchtower_breach_to_db(
+                camera_id=camera_id,
+                entity_type=f"Audio Threat: {tier_name}",
+                identifier=detected_sound.upper(),
+                confidence=confidence,
+                frame_bgr=frame.copy()
+            )
+
+            # Broadcast WebSocket alert
+            ws_alerts.append({
+                "id": f"INC-{int(alert_ts * 1000)}",
+                "title": f"{'🚨 CRITICAL: GUNSHOT / EXPLOSION' if is_high else '⚠️ CROWD DISTRESS'}: {detected_sound.upper()}",
+                "cameraId": camera_id,
+                "confidence": f"{confidence * 100:.1f}%",
+                "time": datetime.now().strftime("%H:%M:%S IST"),
+                "siren": is_high,
+                "silent": False
+            })
+
+            self.active_audio_hud_alerts.append({
+                "tier": tier_name,
+                "sound": detected_sound,
+                "confidence": confidence,
+                "expires_at": now + 5.0
+            })
+
+        # 2. Render Active Audio Threat HUD Banners
+        self.active_audio_hud_alerts = [a for a in self.active_audio_hud_alerts if a["expires_at"] > now]
+
+        for idx, alert in enumerate(self.active_audio_hud_alerts):
+            is_high = (alert["tier"] == "HIGH")
+            color = (0, 0, 255) if is_high else (0, 165, 255)
+            banner_text = f"AUDIO THREAT [{alert['tier']}]: {alert['sound'].upper()} ({alert['confidence'] * 100:.0f}%)"
+
+            # Background pill
+            cv2.rectangle(frame, (20, 50 + (idx * 45)), (w - 20, 85 + (idx * 45)), (10, 10, 25), -1)
+            cv2.rectangle(frame, (20, 50 + (idx * 45)), (w - 20, 85 + (idx * 45)), color, 2)
+            cv2.putText(frame, banner_text, (35, 75 + (idx * 45)), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
+
+        # Top Station Banner
+        cv2.rectangle(frame, (0, 0), (w, 32), (20, 20, 20), -1)
+        cv2.putText(frame, "GARUDA AUDIO-VISUAL THREAT STATION | ACOUSTIC MONITORING ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 2)
+
+        return frame, ws_alerts
+
     # -----------------------------------------------------------------
     # ROLLING CSV LOG RETENTION (MAX 2,000 ROWS -> PURGE OLDEST 1,000)
     # -----------------------------------------------------------------
     def _trim_csv_if_needed(self, file_path, header, max_rows=2000, keep_rows=1000):
-        """
-        Maintains CSV files at a maximum of 2,000 entries.
-        When 2,000 entries are reached, the oldest 1,000 entries are purged,
-        retaining the clean CSV header and the latest 1,000 entries.
-        """
         if not os.path.exists(file_path):
             return
         try:
@@ -211,9 +380,6 @@ class GarudaIntegratedAIEngine:
     # WATCHTOWER REAL-TIME DATABASE INSERTION (FRAME -> BASE64 -> DB)
     # -----------------------------------------------------------------
     def save_watchtower_breach_to_db(self, camera_id: str, entity_type: str, identifier: str, confidence: float, frame_bgr: np.ndarray, local_file_path: str = None):
-        """
-        Saves ONLY Watchtower live breach snapshots (Intruders, Cars, Loitering, Groups) into PostgreSQL.
-        """
         try:
             _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
             base64_image = f"data:image/jpeg;base64,{base64.b64encode(buffer).decode('utf-8')}"
@@ -274,7 +440,6 @@ class GarudaIntegratedAIEngine:
         return status, self.NIGHT_MODE_ENABLED
 
     def log_event(self, event_type, object_type, track_id, confidence, details="", evidence_file=""):
-        """Logs raw tracking and surveillance events with auto-rotation at 2,000 rows."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(self.ALL_OBJECTS_CSV_LOG, "a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow([timestamp, event_type, object_type, track_id, f"{confidence:.2f}", details, evidence_file])
@@ -349,7 +514,7 @@ class GarudaIntegratedAIEngine:
             return False, 0.0
 
     # -----------------------------------------------------------------
-    # MAIN WATCHTOWER LIVE PROCESSING (CAM-02, CAM-03, CAM-04)
+    # MAIN WATCHTOWER LIVE PROCESSING (CAM-02, CAM-03)
     # -----------------------------------------------------------------
     def process_watchtower_frame(self, raw_frame, camera_id="CAM-02"):
         try:
@@ -357,7 +522,6 @@ class GarudaIntegratedAIEngine:
             h, w, _ = raw_frame.shape
             ws_alerts = []
 
-            # Automatic Night Mode
             if self.AUTO_NIGHT_MODE:
                 avg_brightness = np.mean(cv2.cvtColor(raw_frame, cv2.COLOR_BGR2GRAY))
                 self.NIGHT_MODE_ENABLED = bool(avg_brightness < 60)
@@ -387,7 +551,7 @@ class GarudaIntegratedAIEngine:
                 grouped_track_ids, qualifying_clusters = self.check_group_clustering(person_points)
                 cluster_size_by_track = {tid: len(cluster) for cluster in qualifying_clusters for tid in cluster}
 
-                # 1. GROUP CONVERGENCE (REAL-TIME SNAPSHOT -> DATABASE)
+                # 1. Group Convergence
                 if qualifying_clusters:
                     current_time = time.time()
                     if (current_time - self.last_group_alert_time) > self.GROUP_ALERT_COOLDOWN:
@@ -407,7 +571,6 @@ class GarudaIntegratedAIEngine:
                         self.log_event("Group Convergence", "Person", group_ids_str, 0.95,
                                        details=f"{len(largest)} people converged", evidence_file=group_file)
 
-                        # Save live evidence snapshot directly to PostgreSQL
                         self.save_watchtower_breach_to_db(
                             camera_id=camera_id,
                             entity_type="Group Convergence",
@@ -426,7 +589,7 @@ class GarudaIntegratedAIEngine:
                             "siren": False
                         })
 
-                # Process Each Object
+                # Process individual tracks
                 for box, track_id, cls_id, conf in zip(boxes, track_ids, class_ids, confs):
                     x1, y1, x2, y2 = map(int, box)
                     center_pt = ((x1 + x2) // 2, (y1 + y2) // 2)
@@ -438,7 +601,7 @@ class GarudaIntegratedAIEngine:
 
                     has_breached = self.check_breach(camera_id, track_id, center_pt)
 
-                    # Class 0: PERSON (INTRUDER OR LOITERING)
+                    # Class 0: PERSON
                     if cls_id == 0:
                         is_loitering, duration = self.check_loitering(track_id, center_pt)
                         if has_breached:
@@ -455,7 +618,6 @@ class GarudaIntegratedAIEngine:
                                 self.log_event("Person Breach", "Person", track_id, conf, details="Crossed fence", evidence_file=fn)
                                 self.logged_intruders.add(track_id)
 
-                                # Save live intruder snapshot directly to PostgreSQL
                                 self.save_watchtower_breach_to_db(
                                     camera_id=camera_id,
                                     entity_type="Person Breach",
@@ -488,7 +650,6 @@ class GarudaIntegratedAIEngine:
                                 self.log_event("Loitering", "Person", track_id, conf, details=f"Pacing {duration:.0f}s", evidence_file=fn)
                                 self.logged_loiterers.add(track_id)
 
-                                # Save live loitering snapshot directly to PostgreSQL
                                 self.save_watchtower_breach_to_db(
                                     camera_id=camera_id,
                                     entity_type="Loitering",
@@ -525,7 +686,6 @@ class GarudaIntegratedAIEngine:
                                 self.log_event("Vehicle Breach", "Vehicle", track_id, conf, details="Crossed boundary", evidence_file=fn)
                                 self.logged_vehicles.add(track_id)
 
-                                # Save live vehicle breach snapshot directly to PostgreSQL
                                 self.save_watchtower_breach_to_db(
                                     camera_id=camera_id,
                                     entity_type="Vehicle Breach",
@@ -576,41 +736,23 @@ class GarudaIntegratedAIEngine:
     # ENHANCED RAW VIDEO ANPR ENGINE (STATE RESOLUTION + DISAMBIGUATION)
     # -----------------------------------------------------------------
     def resolve_state_code(self, raw_prefix):
-        """
-        Validates and auto-corrects the 2-letter State Prefix.
-        Returns: (is_valid: bool, corrected_prefix: str)
-        """
         raw_prefix = raw_prefix.upper()
-        
-        # 1. Direct valid match
         if raw_prefix in self.VALID_STATE_PREFIXES:
             return True, raw_prefix
-            
-        # 2. Known OCR substitution map
         if raw_prefix in self.STATE_OCR_CORRECTIONS:
             return True, self.STATE_OCR_CORRECTIONS[raw_prefix]
-            
-        # 3. Positional Fallback check (if 1 character was slightly skewed)
         for valid in self.VALID_STATE_PREFIXES:
             if (raw_prefix[0] == valid[0] and raw_prefix[1] in {'0', '1', '8', 'I', 'O', 'B'}) or \
                (raw_prefix[1] == valid[1] and raw_prefix[0] in {'0', '1', '8', 'I', 'O', 'B'}):
                 return True, valid
-                
         return False, raw_prefix
 
     def correct_positional_ocr(self, text):
-        """
-        Applies positional OCR character correction to resolve letter/digit confusions:
-        - Positions 0 & 1: State Letters (e.g. '0L' -> 'DL', '1N' -> 'TN', '8H' -> 'BH')
-        - Positions 2 & 3: RTO Digits (e.g. 'O1' -> '01', 'I2' -> '12')
-        - Last 4 characters: Digits (e.g. 'AB123O' -> 'AB1230', '4S21' -> '4521')
-        """
         if len(text) < 4:
             return text
-
         chars = list(text)
 
-        # 1. State Code Correction (First 2 chars)
+        # 1. State Code Correction
         prefix = "".join(chars[:2])
         is_valid_state, resolved_prefix = self.resolve_state_code(prefix)
         if is_valid_state:
@@ -620,13 +762,13 @@ class GarudaIntegratedAIEngine:
                 if chars[i].isdigit() and chars[i] in self.CHAR_TO_LETTER:
                     chars[i] = self.CHAR_TO_LETTER[chars[i]]
 
-        # 2. RTO Number Correction (Positions 2 & 3 must be digits)
+        # 2. RTO Number Correction
         if len(chars) >= 6:
             for i in [2, 3]:
                 if chars[i].isalpha() and chars[i] in self.CHAR_TO_DIGIT:
                     chars[i] = self.CHAR_TO_DIGIT[chars[i]]
 
-        # 3. Tail Digits Correction (Last 4 characters must be digits for full plates)
+        # 3. Tail Digits Correction
         if len(chars) >= 8:
             tail_start = len(chars) - 4
             for i in range(tail_start, len(chars)):
@@ -636,14 +778,10 @@ class GarudaIntegratedAIEngine:
         return "".join(chars)
 
     def clean_plate(self, text):
-        """Standardizes characters, strips watermarks, and fixes OCR confusions."""
         text = text.upper().strip()
         text = re.sub(r'[^A-Z0-9]', '', text)
-        text = re.sub(r'^(?:IND|IN|I)', '', text)  # Strip standard HSRP watermark
-        
-        # Apply intelligent positional correction
-        corrected = self.correct_positional_ocr(text)
-        return corrected
+        text = re.sub(r'^(?:IND|IN|I)', '', text)
+        return self.correct_positional_ocr(text)
 
     def is_same_plate(self, a, b):
         return a == b
@@ -664,11 +802,9 @@ class GarudaIntegratedAIEngine:
         return [(best_by_text[t][0], best_by_text[t][1], best_by_text[t][2]) for t in order]
 
     def export_final_anpr_summary(self):
-        """Appends and trims ANPR detections to detection.csv."""
         if not self.anpr_all_reads:
             return
         merged = self.merge_plate_reads(self.anpr_all_reads)
-        
         file_exists = os.path.exists(self.ANPR_DETECTION_CSV)
         with open(self.ANPR_DETECTION_CSV, "a" if file_exists else "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -685,60 +821,38 @@ class GarudaIntegratedAIEngine:
         )
 
     def classify_plate_candidate(self, text, conf):
-        """
-        High-Precision Two-Tier Plate Grammar Validator:
-        - Tier 1: Strict Full Plate (Valid State + RTO Digits + Series + 4 Digits)
-        - Tier 2: Guarded Partial Plate (Only valid Head-Partials or Tail-Partials)
-        """
         cleaned = self.clean_plate(text)
-        
-        # 1. Length sanity check (Standard Indian plates are 5 to 10 chars)
         if len(cleaned) < 5 or len(cleaned) > 10:
             return False, False, cleaned
 
-        # 2. Reject common roadside noise words
         for bad_word in self.GARBAGE_WORDS:
             if bad_word in cleaned:
                 return False, False, cleaned
 
-        # 3. Reject repetitive pattern clones (e.g. 'AAAAAA', '111111', 'ABABAB')
         if len(set(cleaned)) < 4:
             return False, False, cleaned
 
         letter_count = sum(1 for c in cleaned if c.isalpha())
         digit_count = sum(1 for c in cleaned if c.isdigit())
-        
-        # Must have at least 1 letter and at least 1 digit
         if letter_count < 1 or digit_count < 1:
             return False, False, cleaned
 
         state_prefix = cleaned[:2]
         is_valid_state, resolved_state = self.resolve_state_code(state_prefix)
 
-        # -------------------------------------------------------------
-        # TIER 1: STRICT FULL PLATE (Length 8 to 10)
-        # e.g., DL01AB1234, MH12DE1433, KA05S8425, BH22AA1234
-        # -------------------------------------------------------------
+        # Tier 1: Full Plate
         if len(cleaned) >= 8 and is_valid_state:
-            # Pattern: 2 State Letters + 1-2 RTO Digits + 0-3 Series Letters + 3-4 Digits
             full_regex = r'^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{3,4}$'
             full_candidate = resolved_state + cleaned[2:]
             if re.match(full_regex, full_candidate) and full_candidate[2:4].isdigit():
                 return True, True, full_candidate
 
-        # -------------------------------------------------------------
-        # TIER 2: GUARDED PARTIAL PLATE (Length 5 to 7)
-        # Zero-Garbage Checks: Must be either a Head-Partial or Tail-Partial
-        # -------------------------------------------------------------
+        # Tier 2: Guarded Partial Plate
         if 5 <= len(cleaned) <= 7:
-            # Case A: Head-Partial (Starts with Valid State + RTO Digit)
-            # e.g., DL01A, MH12DE, KA05S
             if is_valid_state and cleaned[2].isdigit():
                 head_candidate = resolved_state + cleaned[2:]
                 return True, False, f"{head_candidate}** [PARTIAL]"
 
-            # Case B: Tail-Partial (1-2 Series Letters + 3-4 Registration Digits)
-            # e.g., AB1234, DE1433, S8425
             tail_regex = r'^[A-Z]{1,2}[0-9]{3,4}$'
             if re.match(tail_regex, cleaned):
                 return True, False, f"**{cleaned} [PARTIAL]"
@@ -746,7 +860,6 @@ class GarudaIntegratedAIEngine:
         return False, False, cleaned
 
     def preprocess_plate_for_ocr(self, crop):
-        """Enhancement: Upscaling + CLAHE Contrast boost + Bilateral smoothing."""
         if crop.size == 0:
             return crop
         h, w = crop.shape[:2]
@@ -757,9 +870,7 @@ class GarudaIntegratedAIEngine:
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
         enhanced = clahe.apply(gray)
-        
-        filtered = cv2.bilateralFilter(enhanced, 9, 75, 75)
-        return filtered
+        return cv2.bilateralFilter(enhanced, 9, 75, 75)
 
     def draw_overlay(self, frame, box, display_str):
         x1, y1, x2, y2 = box
@@ -775,9 +886,6 @@ class GarudaIntegratedAIEngine:
             fps = 30.0
             now = time.time()
 
-            # -------------------------------------------------------------
-            # FRAME SKIPPING (FRAME_SKIP = 3) WITH BOUNDING BOX CACHE
-            # -------------------------------------------------------------
             if self.anpr_frame_count % self.FRAME_SKIP != 0:
                 for cached_box, cached_str in self.anpr_last_boxes:
                     self.draw_overlay(frame, cached_box, cached_str)
@@ -785,15 +893,12 @@ class GarudaIntegratedAIEngine:
                 cv2.putText(frame, "GARUDA ANPR CHECKPOST SYSTEM | ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
                 return frame, []
 
-            # 1. High Sensitivity Detection Threshold (0.25)
             results = self.anpr_model(frame, conf=self.DETECTION_CONF_THRESHOLD, verbose=False)[0]
             boxes = results.boxes
-
             current_boxes = []
 
             if boxes is not None and len(boxes) > 0:
                 for box in boxes:
-                    conf = float(box.conf[0])
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     x1, y1 = max(0, x1), max(0, y1)
                     x2, y2 = min(w, x2), min(h, y2)
@@ -824,12 +929,10 @@ class GarudaIntegratedAIEngine:
                     current_boxes.append(((x1, y1, x2, y2), display_str))
                     self.draw_overlay(frame, (x1, y1, x2, y2), display_str)
 
-                    # Cooldown-gated logging based on plate text (not track ID)
                     if plate_text:
                         timestamp_sec = self.anpr_frame_count / fps
                         last_logged_time, last_best_conf = self.anpr_seen_cooldown.get(plate_text, (0, 0.0))
 
-                        # Log once per car / plate, or when a higher confidence read occurs
                         if (now - last_logged_time > 4.5) or (ocr_confidence > last_best_conf + 0.15):
                             self.anpr_seen_cooldown[plate_text] = (now, ocr_confidence)
                             self.anpr_all_reads.append((self.anpr_frame_count, timestamp_sec, plate_text, ocr_confidence))
