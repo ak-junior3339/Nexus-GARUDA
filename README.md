@@ -25,6 +25,8 @@ Garuda is an AI-driven software platform designed to transform existing, convent
 * [x] **Cloud Evidence Vault**: Real-time Base64 photographic snapshot persistence to PostgreSQL (Neon Cloud) for high-priority security breaches.
 * [x] **Autonomous Night Vision**: Real-time LAB-space CLAHE enhancement with manual hotkey override (`[N]`).
 * [x] **Memory-Safe Log Rotation**: Auto-pruning buffers keeping CSV logs and UI alert tickers performant indefinitely.
+* [x] **CAM-04 Acoustic Threat Monitor (YAMNet)**: Real-time microphone listening for **Gunfire / Artillery / Explosions** (`HIGH` severity) and **Crowd Distress / Screaming** (`MEDIUM` severity).
+[x] **Dual-Channel Siren System**: Dedicated `alarm.wav` for physical perimeter breaches and `Alert-02.wav` for acoustic threat alerts.
 
 ---
 
@@ -32,36 +34,38 @@ Garuda is an AI-driven software platform designed to transform existing, convent
 
 Garuda utilizes specialized AI pipelines and neural network modules tailored for different border surveillance sectors:
 
-| Sector / Module | Core Technologies & Architecture | Real-Time Output |
+| Sector / Camera | Core Technologies & Neural Networks | Real-Time Output |
 | :--- | :--- | :--- |
-| **CAM-01 (Checkpost ANPR)** | Custom YOLOv8 Plate Detector (`anprbest.pt`), EasyOCR, CLAHE + Bilateral Preprocessing, Positional OCR Disambiguation. | Live plate overlay, telemetry feed, and auto-rotated `detection.csv`. |
-| **CAM-02 / 03 / 04 (Watchtower)** | Custom YOLO11/v8 (`WTbest.pt`), ByteTrack trajectory tracking, Shapely polygon intersection, Union-Find clustering. | Intruder alerts, audio siren triggers, and Base64 court-admissible snapshots in PostgreSQL. |
-| **Super-Resolution (Upscaler)** | EDSR ($4\times$) Deep Super-Resolution network for enhancing low-resolution security/surveillance captures and license plates. | Enhanced high-fidelity plate & suspect crops. |
-| **Facial Recognition (FRS)** | High-accuracy face detection and embedding verification against registered threat databases. | Suspect identity matching and watchlist alerts. |
-| **Adaptive Night Vision** | Automated scene brightness evaluation and CLAHE in LAB color space for dark-environment clarity. | Low-light contrast-enhanced video stream. |
+| **CAM-01 (Checkpost ANPR)** | Custom YOLOv8 Plate Detector (`anprbest.pt`), EasyOCR, CLAHE + Bilateral Filtering, Two-Tier Grammar. | Live plate overlay, telemetry feed, and auto-rotated `detection.csv`. |
+| **CAM-02 / CAM-03 (Watchtower)** | Custom YOLO11/v8 (`WTbest.pt`), ByteTrack trajectory tracking, Shapely polygon intersection, Union-Find clustering. | Intruder alerts, `alarm.wav` siren, and Base64 evidence committed to PostgreSQL. |
+| **CAM-04 (Acoustic Threat Station)** | Google YAMNet Audio Classifier (TensorFlow Hub), 16kHz mono audio streaming (`sounddevice`), Live HUD overlay. | Real-time gunfire/explosion detection, `Alert-02.wav` siren, and instant dashboard dispatch. |
+| **Night Vision Module** | Automated scene brightness evaluation and CLAHE in LAB color space with hotkey toggle (`[N]`). | Low-light contrast-enhanced video stream. |
+
 
 ---
 
-## System Workflow & Dashboard Ecosystem
 
+## 📊 System Workflow & Dashboard Ecosystem
 ```
-               [ IP Camera Network / RTSP / Video Feeds ]
-                                  │
-                                  ▼
-                     [ FastAPI High-Speed Backend ]
-                                  │
-                 ┌────────────────┴────────────────┐
-                 ▼                                 ▼
-       [ CAM-01: ANPR Engine ]          [ CAM-02..04: Watchtower Engine ]
-       • Bicubic + CLAHE Crop           • Perimeter Tripwire Breach
-       • State Code Resolution          • Loitering Anchor Tracking
-       • Zero-Garbage Grammar           • Group Convergence (Graph)
-       • Frame-Skip Caching             • Adaptive Night Vision (LAB)
-                 │                                 │
-                 ├────────────────┬────────────────┤
-                 ▼                ▼                ▼
-        [ Telemetry Stream ] [ PostgreSQL ] [ Audio Siren ]
-          (WebSocket UI)      (Evidence DB)   (Local Alarm)
+               [ IP Camera Network / RTSP Feeds / Microphones ]
+                                   │
+                                   ▼
+                      [ FastAPI High-Speed Backend ]
+                                   │
+         ┌─────────────────────────┼─────────────────────────┐
+         ▼                         ▼                         ▼
+ [ CAM-01: ANPR Engine ]  [ CAM-02/03: Watchtower ]  [ CAM-04: Acoustic YAMNet ]
+ • Bicubic + CLAHE Crop   • Perimeter Tripwire       • Gunfire / Explosion (0.20)
+ • State Code Resolution  • Loitering Anchor         • Crowd Distress / Shouting
+ • Zero-Garbage Grammar   • Group Convergence        • Live Tactical HUD Banner
+ • Frame-Skip Caching     • Adaptive Night Vision    • Multi-Modal DB Snapshot
+         │                         │                         │
+         └─────────────────────────┼─────────────────────────┘
+                                   │
+                  ├────────────────┼────────────────┐
+                  ▼                ▼                ▼
+         [ Telemetry Stream ] [ PostgreSQL ] [ Dual Audio Sirens ]
+           (WebSocket UI)      (Evidence DB)   (alarm.wav / Alert-02.wav)
 ```
 
 ### Operator Dashboard (Tactical Command Center)
@@ -78,6 +82,8 @@ Garuda utilizes specialized AI pipelines and neural network modules tailored for
 * **Role-Based Operator Provisioning**: Provision and manage `OPERATOR` and `ADMIN` credentials with bcrypt password hashing.
 * **Active Session Control**: Real-time operator status tracking and forced session de-authentication.
 * **Cross-Origin Resilient API**: Dynamic host resolution matching `window.location.hostname` with automatic backend failover.
+* **Admin Audit Logs**: Modal tracking the last 100 system events (Logins, Logouts, Provisioning, Account Deletions).
+
 
 ---
 
@@ -124,7 +130,7 @@ A high-performance vehicle identification pipeline designed to capture, isolate,
 | **Gourvi Jain** | Frontend UI/UX Engineering, Database Schema |
 | **Harshil Soni** | Frontend and Auth |
 | **Khushvardhan Johari** | Frontend, Backend & Database |
-| **Aishwarya Kumar Singh (ak_junior)** | Computer Vision Architect, Admin Evidence Vault, AI - Web Integration (Watchtower & ANPR Engine Pipelines) |
+| **Aishwarya Kumar Singh (ak_junior)** | (Team Leader) Computer Vision Architect, Admin Evidence Vault, AI - Web Integration (Watchtower & ANPR Engine Pipelines) |
 
 ---
 
