@@ -346,6 +346,13 @@
   <div class="modal-overlay" id="provision-modal">
     <div class="modal-card" style="background: #0a0f1d; border: 1px solid #3b42a4; padding: 24px; max-width: 440px; width: 100%; border-radius: 4px; font-family: var(--font-mono);">
       <h3 style="margin-bottom: 16px; color: #fff; font-size: 15px; font-weight: bold; text-align: left;">PROVISION NEW OPERATOR</h3>
+      
+      <!-- INLINE ERROR ALERT BANNER -->
+      <div id="provision-error-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; padding: 10px 12px; border-radius: 4px; font-size: 11px; margin-bottom: 14px; align-items: center; gap: 8px;">
+        <span style="font-size: 14px;">⚠️</span>
+        <span id="provision-error-msg">User ID already exists! Please choose another ID.</span>
+      </div>
+
       <form id="provision-form" style="display: flex; flex-direction: column; gap: 14px;">
         <div>
           <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">USER ID</label>
