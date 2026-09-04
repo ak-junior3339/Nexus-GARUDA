@@ -677,6 +677,8 @@ const GarudaAdmin = {
     const openBtn = document.getElementById('open-provision-modal');
     const cancelBtn = document.getElementById('cancel-provision');
     const form = document.getElementById('provision-form');
+    const errorAlert = document.getElementById('provision-error-alert');
+    const errorMsg = document.getElementById('provision-error-msg');
 
     if (!overlay || !openBtn || !form) {
       console.warn('[GarudaAdmin] Provision modal elements not found');
@@ -685,6 +687,7 @@ const GarudaAdmin = {
 
     openBtn.onclick = (e) => {
       e.preventDefault();
+      if (errorAlert) errorAlert.style.display = 'none';
       overlay.classList.add('is-open');
     };
 
@@ -692,12 +695,15 @@ const GarudaAdmin = {
       cancelBtn.onclick = (e) => {
         e.preventDefault();
         overlay.classList.remove('is-open');
+        if (errorAlert) errorAlert.style.display = 'none';
         form.reset();
       };
     }
 
     form.onsubmit = async (e) => {
       e.preventDefault();
+      if (errorAlert) errorAlert.style.display = 'none';
+
       const clearanceVal = document.getElementById('new-clearance').value;
       const userIdVal = document.getElementById('new-user-id').value.trim();
       const fullNameVal = document.getElementById('new-full-name').value.trim();
@@ -722,6 +728,10 @@ const GarudaAdmin = {
         overlay.classList.remove('is-open');
         form.reset();
       } catch (err) {
+        if (errorAlert && errorMsg) {
+          errorMsg.textContent = err.message || `User ID '${userIdVal}' already exists!`;
+          errorAlert.style.display = 'flex';
+        }
         GarudaToast.show(`Provisioning failed: ${err.message}`, 'error');
       }
     };
