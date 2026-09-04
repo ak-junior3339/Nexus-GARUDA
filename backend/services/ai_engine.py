@@ -9,9 +9,10 @@ Features:
   5. Two-Tier Grammar Filter (Full Plates + Guarded Partials)
   6. WatchTower Perimeter Engine (Intruder, Vehicle Breach, Loiter, Group)
   7. CAM-04 YAMNet Acoustic Threat Detector (Gunshots, Explosions, Crowd Distress)
-  8. Real-Time PostgreSQL Evidence Snapshots (Base64)
-  9. Rolling CSV Retention (Max 2,000 entries -> trims oldest 1,000)
-  10. Emergency Night Vision Override (CLAHE) & Audio Siren System
+  8. Dedicated Multi-Sound Alarm (alarm.wav for visual breach, Alert-02.wav for gunfire/crowd)
+  9. Real-Time PostgreSQL Evidence Snapshots (Base64)
+  10. Rolling CSV Retention (Max 2,000 entries -> trims oldest 1,000)
+  11. Emergency Night Vision Override (CLAHE) & Audio Siren System
 ==============================================================================
 """
 
@@ -70,7 +71,10 @@ class GarudaIntegratedAIEngine:
         # -------------------------------------------------------------
         self.WT_MODEL_PATH = os.path.join(base_dir, "WatchTower surveillance", "WTbest.pt")
         self.ANPR_MODEL_PATH = os.path.join(base_dir, "ANPR", "Model", "anprbest.pt")
+        
+        # Audio Alert Sound Files
         self.ALARM_PATH = os.path.join(base_dir, "WatchTower surveillance", "Alert", "alarm.wav")
+        self.AUDIO_ALERT_PATH = os.path.join(base_dir, "WatchTower surveillance", "Alert", "Alert-02.wav")
 
         self.PARENT_LOG_DIR = os.path.join(base_dir, "Logs")
         self.BREACH_LOG_DIR = os.path.join(self.PARENT_LOG_DIR, "breach_logs")
@@ -95,13 +99,18 @@ class GarudaIntegratedAIEngine:
                 csv.writer(f).writerow(["frame", "timestamp_sec", "plate_text"])
 
         # -------------------------------------------------------------
-        # 2. AUDIO SIREN
+        # 2. AUDIO SIRENS (DUAL-CHANNEL)
         # -------------------------------------------------------------
         pygame.mixer.init()
         try:
             self.alarm_sound = pygame.mixer.Sound(self.ALARM_PATH)
         except Exception:
             self.alarm_sound = None
+
+        try:
+            self.audio_threat_sound = pygame.mixer.Sound(self.AUDIO_ALERT_PATH)
+        except Exception:
+            self.audio_threat_sound = self.alarm_sound
 
         self.last_alarm_time = 0
         self.ALARM_COOLDOWN = 3.0
@@ -215,14 +224,14 @@ class GarudaIntegratedAIEngine:
             "HIGH": {
                 "label": "GUNFIRE / EXPLOSION",
                 "classes": ["Gunshot, gunfire", "Machine gun", "Fusillade", "Artillery fire", "Explosion"],
-                "threshold": 0.30,
+                "threshold": 0.20,
                 "cooldown_sec": 3.0,
             },
             "MEDIUM": {
                 "label": "CROWD DISTRESS",
                 "classes": ["Shout", "Yell", "Screaming", "Booing"],
-                "threshold": 0.35,
-                "cooldown_sec": 5.0,
+                "threshold": 0.25,
+                "cooldown_sec": 4.0,
             },
         }
         self.last_audio_alert_time = {tier: 0.0 for tier in self.AUDIO_THREAT_TIERS}
@@ -256,23 +265,26 @@ class GarudaIntegratedAIEngine:
         if waveform.size == 0:
             return
 
-        scores, _, _ = self.yamnet_model(waveform)
-        mean_scores = np.mean(scores.numpy(), axis=0)
+        try:
+            scores, _, _ = self.yamnet_model(waveform)
+            mean_scores = np.mean(scores.numpy(), axis=0)
 
-        now = time.time()
-        for tier_name, tier in self.AUDIO_THREAT_TIERS.items():
-            best_idx, best_score = None, 0.0
-            for idx in tier["indices"]:
-                score = float(mean_scores[idx])
-                if score > best_score:
-                    best_idx, best_score = idx, score
+            now = time.time()
+            for tier_name, tier in self.AUDIO_THREAT_TIERS.items():
+                best_idx, best_score = None, 0.0
+                for idx in tier["indices"]:
+                    score = float(mean_scores[idx])
+                    if score > best_score:
+                        best_idx, best_score = idx, score
 
-            if best_idx is not None and best_score >= tier["threshold"]:
-                if (now - self.last_audio_alert_time[tier_name]) >= tier["cooldown_sec"]:
-                    self.last_audio_alert_time[tier_name] = now
-                    detected_sound = self.yamnet_classes[best_idx]
-                    self.audio_alert_queue.put((tier_name, detected_sound, best_score, now))
-                    print(f"🚨 [AUDIO THREAT]: {tier['label']} ({detected_sound}) - Conf: {best_score:.2f}")
+                if best_idx is not None and best_score >= tier["threshold"]:
+                    if (now - self.last_audio_alert_time[tier_name]) >= tier["cooldown_sec"]:
+                        self.last_audio_alert_time[tier_name] = now
+                        detected_sound = self.yamnet_classes[best_idx]
+                        self.audio_alert_queue.put((tier_name, detected_sound, best_score, now))
+                        print(f"🚨 [AUDIO THREAT DETECTED]: {tier['label']} ({detected_sound}) - Conf: {best_score:.2f}")
+        except Exception as e:
+            print(f"⚠️ [GARUDA AUDIO] Error processing audio stream: {e}")
 
     def _start_audio_listener_thread(self):
         """Spawns microphone listener daemon."""
@@ -295,6 +307,39 @@ class GarudaIntegratedAIEngine:
         t.start()
 
     # -----------------------------------------------------------------
+    # SIREN CONTROLS
+    # -----------------------------------------------------------------
+    def play_siren(self):
+        """Standard Perimeter Breach Alarm (alarm.wav)"""
+        current_time = time.time()
+        if (current_time - self.last_alarm_time) > self.ALARM_COOLDOWN:
+            self.last_alarm_time = current_time
+            if self.alarm_sound:
+                self.alarm_sound.play()
+            else:
+                os.system(f"afplay '{self.ALARM_PATH}' &")
+
+    def play_audio_threat_siren(self):
+        """Dedicated Gunshot & Crowd Distress Alarm (Alert-02.wav)"""
+        current_time = time.time()
+        if (current_time - self.last_alarm_time) > self.ALARM_COOLDOWN:
+            self.last_alarm_time = current_time
+            if self.audio_threat_sound:
+                self.audio_threat_sound.play()
+            elif self.alarm_sound:
+                self.alarm_sound.play()
+            else:
+                os.system(f"afplay '{self.AUDIO_ALERT_PATH}' &")
+
+    def stop_siren(self):
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.stop()
+            os.system("pkill -9 afplay 2>/dev/null")
+        except Exception:
+            pass
+
+    # -----------------------------------------------------------------
     # CAM-04 AUDIO-VISUAL PROCESSING PIPELINE
     # -----------------------------------------------------------------
     def process_cam4_audio_visual_frame(self, frame, camera_id="CAM-04"):
@@ -308,8 +353,8 @@ class GarudaIntegratedAIEngine:
             tier_name, detected_sound, confidence, alert_ts = self.audio_alert_queue.get()
             is_high = (tier_name == "HIGH")
 
-            if is_high:
-                self.play_siren()
+            # Trigger dedicated Alert-02.wav sound
+            self.play_audio_threat_siren()
 
             # Save snapshot to Evidence Vault in PostgreSQL
             self.save_watchtower_breach_to_db(
@@ -402,26 +447,6 @@ class GarudaIntegratedAIEngine:
                 db.close()
         except Exception as e:
             print(f"⚠️ Failed to save watchtower breach to DB: {e}")
-
-    # -----------------------------------------------------------------
-    # SIREN CONTROLS
-    # -----------------------------------------------------------------
-    def play_siren(self):
-        current_time = time.time()
-        if (current_time - self.last_alarm_time) > self.ALARM_COOLDOWN:
-            self.last_alarm_time = current_time
-            if self.alarm_sound:
-                self.alarm_sound.play()
-            else:
-                os.system("afplay /System/Library/Sounds/Submarine.aiff &")
-
-    def stop_siren(self):
-        try:
-            if pygame.mixer.get_init():
-                pygame.mixer.stop()
-            os.system("pkill -9 afplay 2>/dev/null")
-        except Exception:
-            pass
 
     # -----------------------------------------------------------------
     # NIGHT VISION
