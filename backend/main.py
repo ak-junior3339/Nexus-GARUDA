@@ -102,11 +102,12 @@ async def websocket_alerts(websocket: WebSocket, token: str = None):
         manager.disconnect(user_id, websocket)
 
 # 7. CAMERA INPUT SOURCES
+BASE_DIR = "/Users/ak_junior/Desktop/Nexus-Garuda"
 CAMERA_SOURCES = {
-    "CAM-01": "/Users/ak_junior/Desktop/Nexus-Garuda/ANPR/input-videos/I_want_to_remove_the_ANPR_dete.mp4",
-    "CAM-02": "/Users/ak_junior/Desktop/Nexus-Garuda/WatchTower surveillance/test-input/15396176_1920_1080_25fps.mp4",
-    "CAM-03": "/Users/ak_junior/Desktop/Nexus-Garuda/WatchTower surveillance/test-input/15396218_1920_1080_25fps.mp4",
-    "CAM-04": 0
+    "CAM-01": os.path.join(BASE_DIR, "ANPR", "input-videos", "I_want_to_remove_the_ANPR_dete.mp4"),
+    "CAM-02": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396176_1920_1080_25fps.mp4"),
+    "CAM-03": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396218_1920_1080_25fps.mp4"),
+    "CAM-04": 0  # Live WebCam / Acoustic Threat Station
 }
 
 # 8. REST ENDPOINTS
@@ -118,7 +119,7 @@ def get_cameras(db: Session = Depends(get_db)):
             {"id": "CAM-01", "name": "CHECKPOST ANPR", "coords": "28.6139°N 77.2090°E"},
             {"id": "CAM-02", "name": "WATCHTOWER 01", "coords": "28.6200°N 77.2150°E"},
             {"id": "CAM-03", "name": "WATCHTOWER 02", "coords": "28.6100°N 77.2000°E"},
-            {"id": "CAM-04", "name": "FaceCam", "coords": "28.6050°N 77.1980°E"},
+            {"id": "CAM-04", "name": "AUDIO-VISUAL THREAT STATION", "coords": "28.6050°N 77.1980°E"},
         ]
     return cams
 
@@ -151,7 +152,6 @@ def get_incident_vault(db: Session = Depends(get_db)):
 
 @app.delete("/api/v1/incidents/{incident_id}")
 def delete_incident(incident_id: str, db: Session = Depends(get_db)):
-    """Admin endpoint to permanently delete a breach record & image from PostgreSQL."""
     success = crud.delete_incident(db, incident_id)
     if not success:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -165,8 +165,12 @@ def get_operators(db: Session = Depends(get_db)):
 def provision_operator(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     existing_user = crud.get_user_by_user_id(db, payload.user_id)
     if existing_user:
-        raise HTTPException(status_code=400, detail="User ID already exists!")
-    return crud.create_user(db, payload)
+        raise HTTPException(status_code=400, detail=f"User ID '{payload.user_id}' already exists! Please choose another ID.")
+    try:
+        new_user = crud.create_user(db, payload)
+        return new_user
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Provisioning error: {str(e)}")
 
 @app.post("/api/v1/admin/operators/{user_id}/force-logout")
 async def force_logout(user_id: str, db: Session = Depends(get_db)):
@@ -238,6 +242,8 @@ async def generate_single_active_stream(camera_id: str):
 
             if "CAM-01" in camera_id or "CHECKPOST" in camera_id:
                 annotated_frame, alerts = ai_service.process_anpr_frame(raw_frame, camera_id=camera_id)
+            elif "CAM-04" in camera_id:
+                annotated_frame, alerts = ai_service.process_cam4_audio_visual_frame(raw_frame, camera_id=camera_id)
             else:
                 annotated_frame, alerts = ai_service.process_watchtower_frame(raw_frame, camera_id=camera_id)
 
@@ -259,11 +265,11 @@ async def generate_single_active_stream(camera_id: str):
         cap.release()
 
 @app.get("/api/v1/cameras/{camera_id}/stream")
-async def stream_camera(camera_id: str):
+async def video_feed(camera_id: str):
     return StreamingResponse(
         generate_single_active_stream(camera_id),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=[os.path.dirname(os.path.abspath(__file__))])
