@@ -902,18 +902,18 @@ const GarudaAdmin = {
                 item.style.alignItems = 'center';
                 item.style.padding = '6px 10px';
                 item.style.borderRadius = '4px';
-                item.style.background = 'rgba(74, 222, 128, 0.08)';
-                item.style.border = '1px solid rgba(74, 222, 128, 0.25)';
+                item.style.background = 'rgba(0, 0, 0, 0)';
+                item.style.border = '1px solid rgba(0, 0, 0, 0)';
                 item.style.fontFamily = 'var(--font-mono)';
 
                 item.innerHTML = `
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="color: #4ade80; font-weight: bold; font-size: 12px;">#${idx + 1}</span>
+                    <span style="color: #ffffff; font-weight: bold; font-size: 12px;">${idx + 1}</span>
                     <span style="color: #ffffff; font-weight: 700; font-size: 12px; letter-spacing: 0.5px;">${face.name.toUpperCase()}</span>
                   </div>
                   <div style="display: flex; gap: 10px; font-size: 11px;">
-                    <span style="color: #94a3b8;">CONF: <strong style="color: #38bdf8;">${face.confidence}</strong></span>
-                    <span style="color: #94a3b8;">SIM: <strong style="color: #a78bfa;">${face.similarity || 'N/A'}</strong></span>
+                    <span style="color: #94a3b8;">CONF: <strong style="color: #38f868;">${face.confidence}</strong></span>
+                    <span style="color: #94a3b8;">SIM: <strong style="color: #38f868;">${face.similarity || 'N/A'}</strong></span>
                   </div>
                 `;
                 rosterListEl.appendChild(item);
