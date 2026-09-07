@@ -777,10 +777,10 @@ const GarudaAdmin = {
     
     const resultsCard = document.getElementById('face-results-card');
     const resultPreview = document.getElementById('face-result-preview');
-    const resultName = document.getElementById('face-result-name');
-    const resultConf = document.getElementById('face-result-conf');
-    const resultCount = document.getElementById('face-result-count');
-
+    const totalCountEl = document.getElementById('face-total-count');
+    const identifiedCountEl = document.getElementById('face-identified-count');
+    const unknownCountEl = document.getElementById('face-unknown-count');
+    const rosterListEl = document.getElementById('face-roster-list');
     let localStream = null;
 
     if (!overlay || !openBtn) return;
@@ -828,35 +828,72 @@ const GarudaAdmin = {
 
     if (stopCamBtn) stopCamBtn.onclick = () => stopWebcam();
 
-    const processFaceImage = async (base64Img) => {
-      GarudaToast.show('Running Neural Face Identification...', 'default');
-      try {
-        const res = await fetch(`${GarudaConfig.API_BASE_URL}/admin/face-detect`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: base64Img, threshold: 0.45 })
-        });
-        if (!res.ok) throw new Error('Face recognition API returned ' + res.status);
-        const data = await res.json();
+      const processFaceImage = async (base64Img) => {
+        GarudaToast.show('Running Neural Face Identification...', 'default');
+        try {
+          const res = await fetch(`${GarudaConfig.API_BASE_URL}/admin/face-detect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_base64: base64Img, threshold: 0.45 })
+          });
+          if (!res.ok) throw new Error('Face recognition API returned ' + res.status);
+          const data = await res.json();
 
-        if (resultsCard) resultsCard.style.display = 'block';
-        if (resultPreview) resultPreview.src = data.annotated_image;
-        if (resultCount) resultCount.textContent = data.faces_count;
+          if (resultsCard) resultsCard.style.display = 'block';
+          if (resultPreview) resultPreview.src = data.annotated_image;
+          
+          const totalFaces = data.faces ? data.faces.length : 0;
+          const identifiedFaces = data.faces ? data.faces.filter(f => f.name && f.name.toLowerCase() !== 'unknown') : [];
+          const unknownFacesCount = totalFaces - identifiedFaces.length;
 
-        if (data.faces && data.faces.length > 0) {
-          const topFace = data.faces[0];
-          if (resultName) resultName.textContent = `NAME / ID: ${topFace.name.toUpperCase()}`;
-          if (resultConf) resultConf.textContent = `${topFace.confidence} (Sim: ${topFace.similarity})`;
-          GarudaToast.show(`Face Identified: ${topFace.name} (${topFace.confidence})`, 'success');
-        } else {
-          if (resultName) resultName.textContent = 'NO FACE DETECTED';
-          if (resultConf) resultConf.textContent = '0%';
-          GarudaToast.show('No facial features detected in image.', 'default');
+          if (totalCountEl) totalCountEl.textContent = totalFaces;
+          if (identifiedCountEl) identifiedCountEl.textContent = identifiedFaces.length;
+          if (unknownCountEl) unknownCountEl.textContent = unknownFacesCount;
+
+          if (rosterListEl) {
+            rosterListEl.innerHTML = '';
+            if (totalFaces === 0) {
+              rosterListEl.innerHTML = '<span style="color: #64748b; font-size: 11px;">No faces detected in frame.</span>';
+            } else {
+              data.faces.forEach((face, idx) => {
+                const isKnown = face.name && face.name.toLowerCase() !== 'unknown';
+                const item = document.createElement('div');
+                item.style.display = 'flex';
+                item.style.justifyContent = 'space-between';
+                item.style.alignItems = 'center';
+                item.style.padding = '4px 8px';
+                item.style.borderRadius = '3px';
+                item.style.background = isKnown ? 'rgba(74, 222, 128, 0.08)' : 'rgba(239, 68, 68, 0.08)';
+                item.style.border = isKnown ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)';
+                item.style.fontFamily = 'var(--font-mono)';
+
+                item.innerHTML = `
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="color: ${isKnown ? '#4ade80' : '#f87171'}; font-weight: bold;">#${idx + 1}</span>
+                    <span style="color: #fff; font-weight: 600;">${face.name.toUpperCase()}</span>
+                  </div>
+                  <div style="color: #94a3b8; font-size: 10px;">
+                    Conf: <strong style="color: ${isKnown ? '#38bdf8' : '#94a3b8'};">${face.confidence}</strong> 
+                    ${face.similarity ? `(Sim: ${face.similarity})` : ''}
+                  </div>
+                `;
+                rosterListEl.appendChild(item);
+              });
+            }
+          }
+
+          if (identifiedFaces.length > 0) {
+            const names = identifiedFaces.map(f => f.name).join(', ');
+            GarudaToast.show(`Identified ${identifiedFaces.length} of ${totalFaces} face(s): ${names}`, 'success');
+          } else if (totalFaces > 0) {
+            GarudaToast.show(`Detected ${totalFaces} face(s), but none matched enrolled roster.`, 'default');
+          } else {
+            GarudaToast.show('No faces detected in image.', 'default');
+          }
+        } catch (err) {
+          GarudaToast.show('Face detection failed: ' + err.message, 'error');
         }
-      } catch (err) {
-        GarudaToast.show('Face detection failed: ' + err.message, 'error');
-      }
-    };
+      };
 
     if (fileInput) {
       fileInput.onchange = (e) => {
