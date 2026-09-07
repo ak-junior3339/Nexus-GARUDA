@@ -456,15 +456,27 @@
         </div>
       </div>
 
-      <!-- Detection Result Card -->
-      <div id="face-results-card" style="display: none; margin-top: 14px; background: #04060c; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 12px;">
-        <div style="display: flex; gap: 14px; align-items: center;">
-          <img id="face-result-preview" src="" style="width: 130px; height: 110px; object-fit: cover; border-radius: 4px; border: 1px solid #38bdf8;" />
-          <div style="flex: 1; font-size: 11px; color: #94a3b8; display: flex; flex-direction: column; gap: 4px;">
-            <div style="color: #fff; font-weight: bold; font-size: 13px;" id="face-result-name">---</div>
-            <div>STATUS: <span style="color: #4ade80; font-weight: bold;" id="face-result-status">DETECTED</span></div>
-            <div>CONFIDENCE: <strong style="color: #38bdf8;" id="face-result-conf">---</strong></div>
-            <div>FACES FOUND: <strong style="color: #facc15;" id="face-result-count">0</strong></div>
+            <!-- Detection Result Card -->
+      <div id="face-results-card" style="display: none; margin-top: 14px; background: #04060c; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 14px;">
+        <div style="display: flex; gap: 14px; align-items: flex-start;">
+          <img id="face-result-preview" src="" style="width: 140px; height: 120px; object-fit: cover; border-radius: 4px; border: 1px solid #38bdf8;" />
+          <div style="flex: 1; font-size: 11px; color: #94a3b8; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono);">
+              <span style="background: rgba(250, 204, 21, 0.15); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.3); padding: 2px 8px; border-radius: 3px;">
+                TOTAL DETECTED: <strong id="face-total-count">0</strong>
+              </span>
+              <span style="background: rgba(74, 222, 128, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); padding: 2px 8px; border-radius: 3px;">
+                IDENTIFIED: <strong id="face-identified-count">0</strong>
+              </span>
+              <span style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); padding: 2px 8px; border-radius: 3px;">
+                UNKNOWN: <strong id="face-unknown-count">0</strong>
+              </span>
+            </div>
+            
+            <div style="margin-top: 6px; font-weight: bold; color: #cbd5e1; font-family: var(--font-mono);">DETECTED ROSTER / TARGETS:</div>
+            <div id="face-roster-list" style="display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto;">
+              <!-- Dynamic person chips will render here -->
+            </div>
           </div>
         </div>
       </div>
