@@ -842,39 +842,78 @@ const GarudaAdmin = {
           if (resultsCard) resultsCard.style.display = 'block';
           if (resultPreview) resultPreview.src = data.annotated_image;
           
+          // const totalFaces = data.faces ? data.faces.length : 0;
+          // const identifiedFaces = data.faces ? data.faces.filter(f => f.name && f.name.toLowerCase() !== 'unknown') : [];
+          // const unknownFacesCount = totalFaces - identifiedFaces.length;
+
+          // if (totalCountEl) totalCountEl.textContent = totalFaces;
+          // if (identifiedCountEl) identifiedCountEl.textContent = identifiedFaces.length;
+          // if (unknownCountEl) unknownCountEl.textContent = unknownFacesCount;
+
+          // if (rosterListEl) {
+          //   rosterListEl.innerHTML = '';
+          //   if (totalFaces === 0) {
+          //     rosterListEl.innerHTML = '<span style="color: #64748b; font-size: 11px;">No faces detected in frame.</span>';
+          //   } else {
+          //     data.faces.forEach((face, idx) => {
+          //       const isKnown = face.name && face.name.toLowerCase() !== 'unknown';
+          //       const item = document.createElement('div');
+          //       item.style.display = 'flex';
+          //       item.style.justifyContent = 'space-between';
+          //       item.style.alignItems = 'center';
+          //       item.style.padding = '4px 8px';
+          //       item.style.borderRadius = '3px';
+          //       item.style.background = isKnown ? 'rgba(74, 222, 128, 0.08)' : 'rgba(239, 68, 68, 0.08)';
+          //       item.style.border = isKnown ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)';
+          //       item.style.fontFamily = 'var(--font-mono)';
+
+          //       item.innerHTML = `
+          //         <div style="display: flex; align-items: center; gap: 6px;">
+          //           <span style="color: ${isKnown ? '#4ade80' : '#f87171'}; font-weight: bold;">#${idx + 1}</span>
+          //           <span style="color: #fff; font-weight: 600;">${face.name.toUpperCase()}</span>
+          //         </div>
+          //         <div style="color: #94a3b8; font-size: 10px;">
+          //           Conf: <strong style="color: ${isKnown ? '#38bdf8' : '#94a3b8'};">${face.confidence}</strong> 
+          //           ${face.similarity ? `(Sim: ${face.similarity})` : ''}
+          //         </div>
+          //       `;
+          //       rosterListEl.appendChild(item);
+          //     });
+          //   }
+          // }
+
           const totalFaces = data.faces ? data.faces.length : 0;
           const identifiedFaces = data.faces ? data.faces.filter(f => f.name && f.name.toLowerCase() !== 'unknown') : [];
-          const unknownFacesCount = totalFaces - identifiedFaces.length;
 
           if (totalCountEl) totalCountEl.textContent = totalFaces;
           if (identifiedCountEl) identifiedCountEl.textContent = identifiedFaces.length;
-          if (unknownCountEl) unknownCountEl.textContent = unknownFacesCount;
 
           if (rosterListEl) {
             rosterListEl.innerHTML = '';
             if (totalFaces === 0) {
               rosterListEl.innerHTML = '<span style="color: #64748b; font-size: 11px;">No faces detected in frame.</span>';
+            } else if (identifiedFaces.length === 0) {
+              rosterListEl.innerHTML = '<span style="color: #f87171; font-size: 11px;">No registered persons identified (all unknown).</span>';
             } else {
-              data.faces.forEach((face, idx) => {
-                const isKnown = face.name && face.name.toLowerCase() !== 'unknown';
+              identifiedFaces.forEach((face, idx) => {
                 const item = document.createElement('div');
                 item.style.display = 'flex';
                 item.style.justifyContent = 'space-between';
                 item.style.alignItems = 'center';
-                item.style.padding = '4px 8px';
-                item.style.borderRadius = '3px';
-                item.style.background = isKnown ? 'rgba(74, 222, 128, 0.08)' : 'rgba(239, 68, 68, 0.08)';
-                item.style.border = isKnown ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)';
+                item.style.padding = '6px 10px';
+                item.style.borderRadius = '4px';
+                item.style.background = 'rgba(74, 222, 128, 0.08)';
+                item.style.border = '1px solid rgba(74, 222, 128, 0.25)';
                 item.style.fontFamily = 'var(--font-mono)';
 
                 item.innerHTML = `
-                  <div style="display: flex; align-items: center; gap: 6px;">
-                    <span style="color: ${isKnown ? '#4ade80' : '#f87171'}; font-weight: bold;">#${idx + 1}</span>
-                    <span style="color: #fff; font-weight: 600;">${face.name.toUpperCase()}</span>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #4ade80; font-weight: bold; font-size: 12px;">#${idx + 1}</span>
+                    <span style="color: #ffffff; font-weight: 700; font-size: 12px; letter-spacing: 0.5px;">${face.name.toUpperCase()}</span>
                   </div>
-                  <div style="color: #94a3b8; font-size: 10px;">
-                    Conf: <strong style="color: ${isKnown ? '#38bdf8' : '#94a3b8'};">${face.confidence}</strong> 
-                    ${face.similarity ? `(Sim: ${face.similarity})` : ''}
+                  <div style="display: flex; gap: 10px; font-size: 11px;">
+                    <span style="color: #94a3b8;">CONF: <strong style="color: #38bdf8;">${face.confidence}</strong></span>
+                    <span style="color: #94a3b8;">SIM: <strong style="color: #a78bfa;">${face.similarity || 'N/A'}</strong></span>
                   </div>
                 `;
                 rosterListEl.appendChild(item);
