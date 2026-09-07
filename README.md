@@ -15,18 +15,19 @@ Garuda is an AI-driven software platform designed to transform existing, convent
 
 **Our Solution:** A software-defined surveillance platform that ingests live video streams from standard CCTV cameras and performs real-time video analytics to extract actionable intelligence, providing a highly cost-effective, scalable, and automated monitoring grid.
 
-### Key Capabilities
+#### Key Capabilities
 * [x] **Human & Intrusion Tracking**: Real-time trajectory tracing with virtual tripwire perimeter breach detection.
 * [x] **Loitering & Pacing Analytics**: Dwell-time monitoring using Euclidean anchor drift calculations.
 * [x] **Group Convergence Detection**: Spatial graph clustering to identify suspicious human gatherings ($\ge 3$ persons).
 * [x] **High-Yield Raw Video ANPR**: Multi-plate detection with bicubic upscaling, CLAHE contrast boost, and bilateral filtering.
 * [x] **Positional OCR & State Disambiguation**: Auto-correction for all 36 Indian State/UT codes (`DL`, `MH`, `KA`, `BH`, etc.) and digit/letter swaps (`0` $\leftrightarrow$ `O`, `1` $\leftrightarrow$ `I`).
 * [x] **Two-Tier Zero-Garbage Plate Grammar**: Distinguishes verified full plates from guarded partial snippets while discarding roadside noise.
+* [x] **Neural Face Detection & Recognition (InsightFace / ArcFace)**: 512-dimensional vector embedding matching with cosine similarity, multi-target breakdown (Total vs Identified), and live camera/photo test bench.
 * [x] **Cloud Evidence Vault**: Real-time Base64 photographic snapshot persistence to PostgreSQL (Neon Cloud) for high-priority security breaches.
 * [x] **Autonomous Night Vision**: Real-time LAB-space CLAHE enhancement with manual hotkey override (`[N]`).
 * [x] **Memory-Safe Log Rotation**: Auto-pruning buffers keeping CSV logs and UI alert tickers performant indefinitely.
 * [x] **CAM-04 Acoustic Threat Monitor (YAMNet)**: Real-time microphone listening for **Gunfire / Artillery / Explosions** (`HIGH` severity) and **Crowd Distress / Screaming** (`MEDIUM` severity).
-[x] **Dual-Channel Siren System**: Dedicated `alarm.wav` for physical perimeter breaches and `Alert-02.wav` for acoustic threat alerts.
+* [x] **Dual-Channel Siren System**: Dedicated `alarm.wav` for physical perimeter breaches and `Alert-02.wav` for acoustic threat alerts.
 
 ---
 
@@ -34,11 +35,12 @@ Garuda is an AI-driven software platform designed to transform existing, convent
 
 Garuda utilizes specialized AI pipelines and neural network modules tailored for different border surveillance sectors:
 
-| Sector / Camera | Core Technologies & Neural Networks | Real-Time Output |
+| Sector / Module | Core Technologies & Neural Networks | Real-Time Output |
 | :--- | :--- | :--- |
 | **CAM-01 (Checkpost ANPR)** | Custom YOLOv8 Plate Detector (`anprbest.pt`), EasyOCR, CLAHE + Bilateral Filtering, Two-Tier Grammar. | Live plate overlay, telemetry feed, and auto-rotated `detection.csv`. |
 | **CAM-02 / CAM-03 (Watchtower)** | Custom YOLO11/v8 (`WTbest.pt`), ByteTrack trajectory tracking, Shapely polygon intersection, Union-Find clustering. | Intruder alerts, `alarm.wav` siren, and Base64 evidence committed to PostgreSQL. |
 | **CAM-04 (Acoustic Threat Station)** | Google YAMNet Audio Classifier (TensorFlow Hub), 16kHz mono audio streaming (`sounddevice`), Live HUD overlay. | Real-time gunfire/explosion detection, `Alert-02.wav` siren, and instant dashboard dispatch. |
+| **Face Recognition Engine (BETA)** | InsightFace (`buffalo_l` - SCRFD Detector & ArcFace ResNet-50), 512-D Cosine Similarity embeddings. | Bounding box overlays, recognized person name, similarity index, and multi-face telemetry roster. |
 | **Night Vision Module** | Automated scene brightness evaluation and CLAHE in LAB color space with hotkey toggle (`[N]`). | Low-light contrast-enhanced video stream. |
 
 
@@ -83,6 +85,7 @@ Garuda utilizes specialized AI pipelines and neural network modules tailored for
 * **Active Session Control**: Real-time operator status tracking and forced session de-authentication.
 * **Cross-Origin Resilient API**: Dynamic host resolution matching `window.location.hostname` with automatic backend failover.
 * **Admin Audit Logs**: Modal tracking the last 100 system events (Logins, Logouts, Provisioning, Account Deletions).
+* **Face Detection & Recognition (BETA)**: Direct test bench modal supporting photo drag-and-drop and live WebRTC camera capture with multi-target roster reporting.
 
 
 ---
@@ -118,6 +121,31 @@ A high-performance vehicle identification pipeline designed to capture, isolate,
   * **Noise Rejection**: Strips roadside terms (`STOP`, `CARRIER`, `POLICE`, `DIESEL`, `HSRP`) and repetitive artifacts.
 * **Frame-Skip Caching (`FRAME_SKIP = 3`)**: Bounding boxes and labels are cached in RAM on non-inference frames, slashing CPU/GPU load by 66% while maintaining a flicker-free 30 FPS stream.
 * **Self-Pruning CSV Retention**: Automatically purges the oldest 1,000 entries when `detection.csv` or `surveillance_log.csv` reaches 2,000 entries.
+
+---
+
+### 3. Neural Face Detection & Identification Engine (BETA)
+A high-accuracy facial biometric and identity verification subsystem designed for border checkpoints and high-security facility access control.
+
+```
+[ Input Frame / Photo / WebCam ] ──> [ SCRFD Face Detection (10G) ]
+                                                │
+                                                ▼
+                                    [ ArcFace 512-D Embedding ]
+                                                │
+                                                ▼
+[ Annotated Frame & Roster HUD ] <── [ Cosine Similarity Match vs known_faces.pkl ]
+```
+
+* **Neural Backbone**: InsightFace `buffalo_l` suite utilizing **SCRFD 10G** detection and **ArcFace ResNet-50** (`w600k_r50.onnx`) 512-dimensional vector embedding generator.
+* **Cosine Similarity Matcher**: Evaluates live face vectors against an enrolled local database (`known_faces.pkl`) with dynamic threshold gating ($\ge 0.45$).
+* **Multi-Target Intelligence**:
+  * **Total Faces Detected**: Counts all human faces visible in the scene.
+  * **Identified Roster**: Surfaces recognized personnel names, detection confidence percentage, and exact cosine similarity score.
+  * **Unknown Target Filtering**: Omits non-registered individuals from the identified list while maintaining full situational awareness bounding boxes on screen.
+* **Admin Verification Testbench**: Integrated into `admin.html` with two testing modes:
+  1. *Drag-and-Drop Photo Upload*
+  2. *Live WebRTC Camera Stream & Instant Capture*
 
 ---
 
@@ -186,11 +214,3 @@ python -m http.server 5500
 Open `http://localhost:5500/frontend/login.html` in your browser.
 
 
-
-### todo : 
-* 1- Adding audio based features (Gunshots,Crown noise)
-* 2- Facial recognition
-
-* 4- Group convergence coordinates 
-* 5-  Multi-Camera Cross-Tracking (Re-ID): Implement lightweight feature vector embeddings (Re-Identification) to track the same suspect across multiple BOP camera feeds without needing facial recognition.
-* 6- Directional Threat Vectoring: Calculate real-time speed, heading angle, and predicted path (e.g., "Target moving 12 km/h SSW toward Post 4"), elevating raw bounding boxes into military tactical telemetry.
