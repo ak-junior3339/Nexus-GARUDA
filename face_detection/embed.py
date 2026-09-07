@@ -2,8 +2,8 @@ import cv2, pickle, os, numpy as np
 from load_model import get_app
 
 app = get_app()
-DB_PATH = "known_faces.pkl"
-PHOTOS_DIR = "enroll_photos"
+DB_PATH = "face_detection/known_faces.pkl"
+PHOTOS_DIR = "face_detection/enroll_photos"
 
 known_faces = {}
 if os.path.exists(DB_PATH):
