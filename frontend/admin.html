@@ -256,9 +256,14 @@
     <section class="admin-section">
       <div class="admin-section__head" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <h2 style="font-family: var(--font-mono); font-size: 16px;">OPERATOR &amp; SESSION CONTROL</h2>
-        <div style="display: flex; gap: 10px;">
+        <div style="display: flex; gap: 10px; align-items: center;">
           <!-- AUDIT BUTTON -->
           <button type="button" class="btn-primary" id="open-audit-modal" style="background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 14px; font-family: var(--font-mono); cursor: pointer;">ADMIN AUDIT LOGS</button>
+          
+          <!-- TRY FACE DETECTION BETA BUTTON -->
+          <button type="button" class="btn-primary" id="open-face-modal" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid #0284c7; padding: 6px 14px; font-family: var(--font-mono); cursor: pointer;">
+            TRY FACE DETECTION <sub style="color: #facc15; font-size: 9px; font-weight: bold;">BETA</sub>
+          </button>
           
           <button type="button" class="btn-primary" id="open-provision-modal" style="background: #3b42a4; color: #fff; border: 1px solid #818cf8; padding: 6px 14px; font-family: var(--font-mono); cursor: pointer;">+ PROVISION NEW OPERATOR</button>
         </div>
@@ -342,7 +347,7 @@
     </div>
   </div>
 
-  <!-- ============================= PROVISION OPERATOR MODAL (CENTER-ALIGNED) ============================= -->
+  <!-- ============================= PROVISION OPERATOR MODAL ============================= -->
   <div class="modal-overlay" id="provision-modal">
     <div class="modal-card" style="background: #0a0f1d; border: 1px solid #3b42a4; padding: 24px; max-width: 440px; width: 100%; border-radius: 4px; font-family: var(--font-mono);">
       <h3 style="margin-bottom: 16px; color: #fff; font-size: 15px; font-weight: bold; text-align: left;">PROVISION NEW OPERATOR</h3>
@@ -408,6 +413,61 @@
             <!-- Rendered dynamically via JS -->
           </tbody>
         </table>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================= FACE DETECTION MODAL (BETA) ============================= -->
+  <div class="modal-overlay" id="face-detect-modal">
+    <div class="modal-card" style="background: #0a0f1d; border: 1px solid #0284c7; padding: 24px; max-width: 650px; width: 100%; border-radius: 6px; font-family: var(--font-mono);">
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+        <div>
+          <h3 style="color: #fff; font-size: 15px; font-weight: bold;">FACE DETECTION &amp; IDENTIFICATION</h3>
+          <span style="font-size: 10px; color: #38bdf8;">GARUDA LABS • EXPERIMENTAL MODULE <sub style="color: #facc15; font-weight: bold;">BETA</sub></span>
+        </div>
+        <button type="button" id="close-face-modal" style="background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+
+      <!-- Mode Selector Tabs -->
+      <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+        <button type="button" id="tab-face-upload" class="view-toggle-btn is-active" style="flex: 1; padding: 8px; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;">UPLOAD PHOTO</button>
+        <button type="button" id="tab-face-camera" class="view-toggle-btn" style="flex: 1; padding: 8px; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;">LIVE CAMERA</button>
+      </div>
+
+      <!-- Upload View -->
+      <div id="face-upload-container" style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 2px dashed rgba(255,255,255,0.2); border-radius: 6px; padding: 20px; text-align: center; background: #04060c; cursor: pointer;" onclick="document.getElementById('face-file-input').click()">
+          <input type="file" id="face-file-input" accept="image/*" style="display: none;" />
+          <div style="font-size: 24px; margin-bottom: 6px;">📸</div>
+          <span style="color: #94a3b8; font-size: 11px;">Click or Drag &amp; Drop Photo to Detect Faces</span>
+        </div>
+      </div>
+
+      <!-- Live Camera View -->
+      <div id="face-camera-container" style="display: none; flex-direction: column; gap: 10px;">
+        <div style="position: relative; width: 100%; height: 260px; background: #000; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+          <video id="face-webcam-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+          <canvas id="face-capture-canvas" style="display: none;"></canvas>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" id="btn-capture-face" class="btn-primary" style="flex: 1; padding: 8px; background: #0284c7; color: #fff; font-family: var(--font-mono); font-size: 11px; cursor: pointer; border: 1px solid #38bdf8;">CAPTURE &amp; IDENTIFY</button>
+          <button type="button" id="btn-stop-cam" class="btn-mini btn-mini--danger" style="padding: 8px 14px; font-family: var(--font-mono); cursor: pointer;">STOP CAM</button>
+        </div>
+      </div>
+
+      <!-- Detection Result Card -->
+      <div id="face-results-card" style="display: none; margin-top: 14px; background: #04060c; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 12px;">
+        <div style="display: flex; gap: 14px; align-items: center;">
+          <img id="face-result-preview" src="" style="width: 130px; height: 110px; object-fit: cover; border-radius: 4px; border: 1px solid #38bdf8;" />
+          <div style="flex: 1; font-size: 11px; color: #94a3b8; display: flex; flex-direction: column; gap: 4px;">
+            <div style="color: #fff; font-weight: bold; font-size: 13px;" id="face-result-name">---</div>
+            <div>STATUS: <span style="color: #4ade80; font-weight: bold;" id="face-result-status">DETECTED</span></div>
+            <div>CONFIDENCE: <strong style="color: #38bdf8;" id="face-result-conf">---</strong></div>
+            <div>FACES FOUND: <strong style="color: #facc15;" id="face-result-count">0</strong></div>
+          </div>
+        </div>
       </div>
 
     </div>
