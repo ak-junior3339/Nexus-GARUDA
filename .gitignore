@@ -167,3 +167,5 @@ wandb/
 
 breach_logs/
 detections.csv
+face_detection/enroll_photos
+face_detection/weights

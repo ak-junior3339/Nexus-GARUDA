@@ -1,24 +1,8 @@
 /* ============================================================================
    GARUDA — Master Client Logic
    SIH PS 26187 — Team Nexus
-   ----------------------------------------------------------------------------
-   Modules:
-     GarudaConfig      -> Endpoint & storage configuration
-     GarudaAPI         -> REST API wrapper for FastAPI
-     GarudaAuthStore   -> Session & JWT persistence
-     GarudaAuditStore  -> Admin Audit Logging (Max 100 entries)
-     GarudaAuth        -> Login / Logout workflows & CAPTCHA handling
-     GarudaGuard       -> Role-based route guard
-     GarudaSocket      -> WebSocket real-time alerts & Force-Logout listener
-     GarudaToast       -> Military HUD notifications
-     GarudaDashboard   -> Dashboard controller & telemetry metrics (Max 200 -> purge 100)
-     GarudaAdmin       -> Admin operator provisioning, session control & Unified Evidence Dossier
-     GarudaCameraViewer-> Active camera switcher, Night-mode toggle (Hot-key: N)
    ============================================================================ */
 
-/* ---------------------------------------------------------------------------
-   1. CONFIG
-   --------------------------------------------------------------------------- */
 const GarudaConfig = Object.freeze({
   API_BASE_URL: 'http://localhost:8000/api/v1',
   WS_BASE_URL: 'ws://localhost:8000/ws',
@@ -28,7 +12,7 @@ const GarudaConfig = Object.freeze({
 });
 
 /* ---------------------------------------------------------------------------
-   2. REST API WRAPPER
+   REST API WRAPPER
    --------------------------------------------------------------------------- */
 const GarudaAPI = {
   async _request(path, options = {}) {
@@ -88,7 +72,7 @@ const GarudaAPI = {
 };
 
 /* ---------------------------------------------------------------------------
-   3. AUTH STORE
+   AUTH STORE
    --------------------------------------------------------------------------- */
 const GarudaAuthStore = {
   setSession({ token, role, userId, fullName }) {
@@ -115,7 +99,7 @@ const GarudaAuthStore = {
 };
 
 /* ---------------------------------------------------------------------------
-   3.5 AUDIT LOG STORE (Max 100 entries)
+   AUDIT LOG STORE (Max 100 entries)
    --------------------------------------------------------------------------- */
 const GarudaAuditStore = {
   KEY: 'garuda_audit_logs',
@@ -130,7 +114,6 @@ const GarudaAuditStore = {
     let logs = this.getLogs();
     const now = new Date();
     
-    // Add new log to the top of the array
     logs.unshift({
       date: now.toLocaleDateString('en-IN'),
       time: now.toLocaleTimeString('en-IN', { hour12: false }),
@@ -138,7 +121,6 @@ const GarudaAuditStore = {
       activity: activity
     });
 
-    // Auto-clear logic: Keep only the latest 100 logs
     if (logs.length > 100) {
       logs = logs.slice(0, 100); 
     }
@@ -148,7 +130,7 @@ const GarudaAuditStore = {
 };
 
 /* ---------------------------------------------------------------------------
-   4. AUTH FLOWS
+   AUTH FLOWS
    --------------------------------------------------------------------------- */
 const GarudaAuth = {
   async loadCaptcha(mode) {
@@ -243,7 +225,7 @@ const GarudaAuth = {
 };
 
 /* ---------------------------------------------------------------------------
-   5. ROUTE GUARD
+   ROUTE GUARD
    --------------------------------------------------------------------------- */
 const GarudaGuard = {
   requireRole(expectedRole, redirectTo = 'login.html') {
@@ -257,7 +239,7 @@ const GarudaGuard = {
 };
 
 /* ---------------------------------------------------------------------------
-   6. REAL-TIME ALERT WEBSOCKET
+   REAL-TIME ALERT WEBSOCKET
    --------------------------------------------------------------------------- */
 const GarudaSocket = {
   _socket: null,
@@ -309,7 +291,7 @@ const GarudaSocket = {
 };
 
 /* ---------------------------------------------------------------------------
-   7. TOAST NOTIFICATIONS
+   TOAST NOTIFICATIONS
    --------------------------------------------------------------------------- */
 const GarudaToast = {
   show(message, variant = 'default') {
@@ -324,7 +306,7 @@ const GarudaToast = {
 };
 
 /* ---------------------------------------------------------------------------
-   8. DASHBOARD CONTROLLER (MAX 200 ENTRIES -> TRIM OLDEST 100)
+   DASHBOARD CONTROLLER
    --------------------------------------------------------------------------- */
 const GarudaDashboard = {
   init() {
@@ -375,8 +357,9 @@ const GarudaDashboard = {
     const list = document.getElementById('active-incident-list');
     const badge = document.getElementById('active-incident-count');
 
-    // 1. Filter alerts by active camera feed
-    if (typeof GarudaCameraViewer !== 'undefined') {
+    const isCriticalAudio = alert.title && (alert.title.includes('GUNSHOT') || alert.title.includes('EXPLOSION') || alert.siren);
+
+    if (!isCriticalAudio && typeof GarudaCameraViewer !== 'undefined') {
       const currentCam = GarudaCameraViewer.cameras[GarudaCameraViewer.currentIndex];
       if (alert.cameraId && alert.cameraId !== currentCam) {
         return;
@@ -387,7 +370,6 @@ const GarudaDashboard = {
     const emptyState = list.querySelector('.incident-empty');
     if (emptyState) emptyState.remove();
 
-    // 2. Insert new incident row at top
     const row = document.createElement('div');
     row.className = 'incident-row';
     row.dataset.incidentId = alert.id;
@@ -398,7 +380,6 @@ const GarudaDashboard = {
     `;
     list.prepend(row);
 
-    // 3. UI ROLLING BUFFER (IF >= 200 ROWS, REMOVE OLDEST 100)
     const rows = list.querySelectorAll('.incident-row');
     if (rows.length >= 200) {
       for (let i = 100; i < rows.length; i++) {
@@ -406,14 +387,12 @@ const GarudaDashboard = {
       }
     }
 
-    // 4. Update count badge
     if (badge) {
       const activeCount = list.querySelectorAll('.incident-row').length;
       badge.dataset.count = activeCount;
       badge.textContent = `${activeCount} ENTRIES`;
     }
 
-    // 5. Notification toast
     if (!alert.silent) {
       GarudaToast.show(`ALERT: ${alert.title} on ${alert.cameraId}`, alert.siren ? 'error' : 'default');
     }
@@ -421,11 +400,11 @@ const GarudaDashboard = {
 };
 
 /* ---------------------------------------------------------------------------
-   9. ADMIN CONTROLLER (OPERATORS + UNIFIED EVIDENCE DOSSIER & VAULT)
+   ADMIN CONTROLLER (OPERATORS, VAULT, AUDIT & FACE DETECTION BETA)
    --------------------------------------------------------------------------- */
 const GarudaAdmin = {
   currentInspectingId: null,
-  currentView: 'table', // 'table' or 'gallery'
+  currentView: 'table',
   cachedIncidents: [],
 
   init() {
@@ -441,6 +420,7 @@ const GarudaAdmin = {
     this._bindOperatorActions();
     this._bindProvisionModal();
     this._bindAuditModal();
+    this._bindFaceModal();
     this._loadOperators();
     this.loadEvidenceVault();
   },
@@ -509,7 +489,6 @@ const GarudaAdmin = {
       return;
     }
 
-    // 1. Render Table Dossier Rows
     if (tbody) {
       tbody.innerHTML = '';
       incidents.forEach((inc) => {
@@ -541,7 +520,6 @@ const GarudaAdmin = {
       });
     }
 
-    // 2. Render Card Gallery
     if (grid) {
       grid.innerHTML = '';
       incidents.forEach((inc) => {
@@ -680,10 +658,7 @@ const GarudaAdmin = {
     const errorAlert = document.getElementById('provision-error-alert');
     const errorMsg = document.getElementById('provision-error-msg');
 
-    if (!overlay || !openBtn || !form) {
-      console.warn('[GarudaAdmin] Provision modal elements not found');
-      return;
-    }
+    if (!overlay || !openBtn || !form) return;
 
     openBtn.onclick = (e) => {
       e.preventDefault();
@@ -787,6 +762,205 @@ const GarudaAdmin = {
     });
   },
 
+  _bindFaceModal() {
+    const overlay = document.getElementById('face-detect-modal');
+    const openBtn = document.getElementById('open-face-modal');
+    const closeBtn = document.getElementById('close-face-modal');
+    const tabUpload = document.getElementById('tab-face-upload');
+    const tabCamera = document.getElementById('tab-face-camera');
+    const uploadContainer = document.getElementById('face-upload-container');
+    const cameraContainer = document.getElementById('face-camera-container');
+    const fileInput = document.getElementById('face-file-input');
+    const video = document.getElementById('face-webcam-video');
+    const captureBtn = document.getElementById('btn-capture-face');
+    const stopCamBtn = document.getElementById('btn-stop-cam');
+    
+    const resultsCard = document.getElementById('face-results-card');
+    const resultPreview = document.getElementById('face-result-preview');
+    const totalCountEl = document.getElementById('face-total-count');
+    const identifiedCountEl = document.getElementById('face-identified-count');
+    const unknownCountEl = document.getElementById('face-unknown-count');
+    const rosterListEl = document.getElementById('face-roster-list');
+    let localStream = null;
+
+    if (!overlay || !openBtn) return;
+
+    const stopWebcam = () => {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+      }
+    };
+
+    openBtn.onclick = (e) => {
+      e.preventDefault();
+      overlay.classList.add('is-open');
+    };
+
+    closeBtn.onclick = (e) => {
+      e.preventDefault();
+      stopWebcam();
+      overlay.classList.remove('is-open');
+    };
+
+    if (tabUpload && tabCamera) {
+      tabUpload.onclick = () => {
+        tabUpload.classList.add('is-active');
+        tabCamera.classList.remove('is-active');
+        uploadContainer.style.display = 'flex';
+        cameraContainer.style.display = 'none';
+        stopWebcam();
+      };
+
+      tabCamera.onclick = async () => {
+        tabCamera.classList.add('is-active');
+        tabUpload.classList.remove('is-active');
+        uploadContainer.style.display = 'none';
+        cameraContainer.style.display = 'flex';
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+          video.srcObject = localStream;
+        } catch (err) {
+          GarudaToast.show('Webcam access denied or unavailable: ' + err.message, 'error');
+        }
+      };
+    }
+
+    if (stopCamBtn) stopCamBtn.onclick = () => stopWebcam();
+
+      const processFaceImage = async (base64Img) => {
+        GarudaToast.show('Running Neural Face Identification...', 'default');
+        try {
+          const res = await fetch(`${GarudaConfig.API_BASE_URL}/admin/face-detect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_base64: base64Img, threshold: 0.45 })
+          });
+          if (!res.ok) throw new Error('Face recognition API returned ' + res.status);
+          const data = await res.json();
+
+          if (resultsCard) resultsCard.style.display = 'block';
+          if (resultPreview) resultPreview.src = data.annotated_image;
+          
+          // const totalFaces = data.faces ? data.faces.length : 0;
+          // const identifiedFaces = data.faces ? data.faces.filter(f => f.name && f.name.toLowerCase() !== 'unknown') : [];
+          // const unknownFacesCount = totalFaces - identifiedFaces.length;
+
+          // if (totalCountEl) totalCountEl.textContent = totalFaces;
+          // if (identifiedCountEl) identifiedCountEl.textContent = identifiedFaces.length;
+          // if (unknownCountEl) unknownCountEl.textContent = unknownFacesCount;
+
+          // if (rosterListEl) {
+          //   rosterListEl.innerHTML = '';
+          //   if (totalFaces === 0) {
+          //     rosterListEl.innerHTML = '<span style="color: #64748b; font-size: 11px;">No faces detected in frame.</span>';
+          //   } else {
+          //     data.faces.forEach((face, idx) => {
+          //       const isKnown = face.name && face.name.toLowerCase() !== 'unknown';
+          //       const item = document.createElement('div');
+          //       item.style.display = 'flex';
+          //       item.style.justifyContent = 'space-between';
+          //       item.style.alignItems = 'center';
+          //       item.style.padding = '4px 8px';
+          //       item.style.borderRadius = '3px';
+          //       item.style.background = isKnown ? 'rgba(74, 222, 128, 0.08)' : 'rgba(239, 68, 68, 0.08)';
+          //       item.style.border = isKnown ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)';
+          //       item.style.fontFamily = 'var(--font-mono)';
+
+          //       item.innerHTML = `
+          //         <div style="display: flex; align-items: center; gap: 6px;">
+          //           <span style="color: ${isKnown ? '#4ade80' : '#f87171'}; font-weight: bold;">#${idx + 1}</span>
+          //           <span style="color: #fff; font-weight: 600;">${face.name.toUpperCase()}</span>
+          //         </div>
+          //         <div style="color: #94a3b8; font-size: 10px;">
+          //           Conf: <strong style="color: ${isKnown ? '#38bdf8' : '#94a3b8'};">${face.confidence}</strong> 
+          //           ${face.similarity ? `(Sim: ${face.similarity})` : ''}
+          //         </div>
+          //       `;
+          //       rosterListEl.appendChild(item);
+          //     });
+          //   }
+          // }
+
+          const totalFaces = data.faces ? data.faces.length : 0;
+          const identifiedFaces = data.faces ? data.faces.filter(f => f.name && f.name.toLowerCase() !== 'unknown') : [];
+
+          if (totalCountEl) totalCountEl.textContent = totalFaces;
+          if (identifiedCountEl) identifiedCountEl.textContent = identifiedFaces.length;
+
+          if (rosterListEl) {
+            rosterListEl.innerHTML = '';
+            if (totalFaces === 0) {
+              rosterListEl.innerHTML = '<span style="color: #64748b; font-size: 11px;">No faces detected in frame.</span>';
+            } else if (identifiedFaces.length === 0) {
+              rosterListEl.innerHTML = '<span style="color: #f87171; font-size: 11px;">No registered persons identified (all unknown).</span>';
+            } else {
+              identifiedFaces.forEach((face, idx) => {
+                const item = document.createElement('div');
+                item.style.display = 'flex';
+                item.style.justifyContent = 'space-between';
+                item.style.alignItems = 'center';
+                item.style.padding = '6px 10px';
+                item.style.borderRadius = '4px';
+                item.style.background = 'rgba(0, 0, 0, 0)';
+                item.style.border = '1px solid rgba(0, 0, 0, 0)';
+                item.style.fontFamily = 'var(--font-mono)';
+
+                item.innerHTML = `
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #ffffff; font-weight: bold; font-size: 12px;">${idx + 1}</span>
+                    <span style="color: #ffffff; font-weight: 700; font-size: 12px; letter-spacing: 0.5px;">${face.name.toUpperCase()}</span>
+                  </div>
+                  <div style="display: flex; gap: 10px; font-size: 11px;">
+                    <span style="color: #94a3b8;">CONF: <strong style="color: #38f868;">${face.confidence}</strong></span>
+                    <span style="color: #94a3b8;">SIM: <strong style="color: #38f868;">${face.similarity || 'N/A'}</strong></span>
+                  </div>
+                `;
+                rosterListEl.appendChild(item);
+              });
+            }
+          }
+
+          if (identifiedFaces.length > 0) {
+            const names = identifiedFaces.map(f => f.name).join(', ');
+            GarudaToast.show(`Identified ${identifiedFaces.length} of ${totalFaces} face(s): ${names}`, 'success');
+          } else if (totalFaces > 0) {
+            GarudaToast.show(`Detected ${totalFaces} face(s), but none matched enrolled roster.`, 'default');
+          } else {
+            GarudaToast.show('No faces detected in image.', 'default');
+          }
+        } catch (err) {
+          GarudaToast.show('Face detection failed: ' + err.message, 'error');
+        }
+      };
+
+    if (fileInput) {
+      fileInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => processFaceImage(evt.target.result);
+        reader.readAsDataURL(file);
+      };
+    }
+
+    if (captureBtn) {
+      captureBtn.onclick = () => {
+        if (!localStream) {
+          GarudaToast.show('Camera stream not active', 'error');
+          return;
+        }
+        const canvas = document.getElementById('face-capture-canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        processFaceImage(dataUrl);
+      };
+    }
+  },
+
   _appendOperatorRow({ user_id, full_name, clearance_level, status = 'offline' }) {
     const tbody = document.querySelector('#operator-table tbody');
     if (!tbody) return;
@@ -811,7 +985,7 @@ const GarudaAdmin = {
 };
 
 /* ---------------------------------------------------------------------------
-   10. DYNAMIC CAMERA ROTATION & NIGHT MODE (HOT-KEY: 'N')
+   DYNAMIC CAMERA ROTATION & NIGHT MODE
    --------------------------------------------------------------------------- */
 const GarudaCameraViewer = {
   cameras: ['CAM-01', 'CAM-02', 'CAM-03', 'CAM-04'],
@@ -819,7 +993,7 @@ const GarudaCameraViewer = {
     'CAM-01': 'CHECKPOST ANPR',
     'CAM-02': 'WATCHTOWER 01',
     'CAM-03': 'WATCHTOWER 02',
-    'CAM-04': 'FACECAM'
+    'CAM-04': 'AUDIO-VISUAL THREAT STATION'
   },
   cameraCoords: {
     'CAM-01': '28.6139°N 77.2090°E',
