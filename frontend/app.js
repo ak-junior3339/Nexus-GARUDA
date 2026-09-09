@@ -893,7 +893,7 @@ const GarudaAdmin = {
             if (totalFaces === 0) {
               rosterListEl.innerHTML = '<span style="color: #64748b; font-size: 11px;">No faces detected in frame.</span>';
             } else if (identifiedFaces.length === 0) {
-              rosterListEl.innerHTML = '<span style="color: #f87171; font-size: 11px;">No registered persons identified (all unknown).</span>';
+              rosterListEl.innerHTML = '<span style="color: #d60606; font-size: 11px;">No registered persons identified (all unknown).</span>';
             } else {
               identifiedFaces.forEach((face, idx) => {
                 const item = document.createElement('div');
