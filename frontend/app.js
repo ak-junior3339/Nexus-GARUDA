@@ -988,18 +988,20 @@ const GarudaAdmin = {
    DYNAMIC CAMERA ROTATION & NIGHT MODE
    --------------------------------------------------------------------------- */
 const GarudaCameraViewer = {
-  cameras: ['CAM-01', 'CAM-02', 'CAM-03', 'CAM-04'],
+  cameras: ['CAM-01', 'CAM-02', 'CAM-03', 'CAM-04', 'CAM-05'],
   cameraNames: {
     'CAM-01': 'CHECKPOST ANPR',
     'CAM-02': 'WATCHTOWER 01',
     'CAM-03': 'WATCHTOWER 02',
-    'CAM-04': 'AUDIO-VISUAL THREAT STATION'
+    'CAM-04': 'AUDIO-VISUAL THREAT STATION',
+    'CAM-05': 'NIGHT VISION'
   },
   cameraCoords: {
     'CAM-01': '28.6139°N 77.2090°E',
     'CAM-02': '28.6200°N 77.2150°E',
     'CAM-03': '28.6100°N 77.2000°E',
-    'CAM-04': '28.6050°N 77.1980°E'
+    'CAM-04': '28.6050°N 77.1980°E',
+    'CAM-05': '28.6000°N 77.1950°E'
   },
   currentIndex: 0,
   nightModeEnabled: false,
@@ -1040,20 +1042,14 @@ const GarudaCameraViewer = {
     });
   },
 
-  async toggleNightVision() {
-    const currentCam = this.cameras[this.currentIndex];
-    if (currentCam === 'CAM-01') {
-      GarudaToast.show('Night Vision CLAHE is active on Watchtower cameras only.', 'default');
-      return;
-    }
-
+    async toggleNightVision() {
     try {
       const res = await fetch(`${GarudaConfig.API_BASE_URL}/cameras/toggle-night-mode`, { method: 'POST' });
       const data = await res.json();
       this.nightModeStatus = data.status;
       this.nightModeEnabled = data.is_enabled;
       this._updateNightVisionUI();
-      GarudaToast.show(`Emergency Override: Night Vision ${data.status}`, this.nightModeEnabled ? 'success' : 'default');
+      GarudaToast.show(`Night Vision: ${data.status}`, 'default');
     } catch (e) {
       console.error("Failed to toggle emergency night mode:", e);
     }
@@ -1066,6 +1062,7 @@ const GarudaCameraViewer = {
 
     if (!btn) return;
 
+    // Show button on all cameras except CAM-01
     if (currentCam === 'CAM-01') {
       btn.style.display = 'none';
       return;
@@ -1076,12 +1073,18 @@ const GarudaCameraViewer = {
     const label = this.nightModeStatus || 'AUTO';
     if (statusText) statusText.textContent = label;
 
-    if (this.nightModeEnabled) {
+    if (label === 'MANUAL ON') {
       btn.style.borderColor = '#22c55e';
       btn.style.background = 'rgba(20, 83, 45, 0.85)';
       btn.style.color = '#fff';
       if (statusText) statusText.style.color = '#4ade80';
+    } else if (label === 'AUTO') {
+      btn.style.borderColor = '#38bdf8';
+      btn.style.background = 'rgba(14, 165, 233, 0.15)';
+      btn.style.color = '#38bdf8';
+      if (statusText) statusText.style.color = '#38bdf8';
     } else {
+      // MANUAL OFF
       btn.style.borderColor = 'rgba(255,255,255,0.25)';
       btn.style.background = 'rgba(5,8,17,0.85)';
       btn.style.color = '#94a3b8';

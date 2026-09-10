@@ -400,7 +400,57 @@ class GarudaIntegratedAIEngine:
         cv2.putText(frame, "GARUDA AUDIO-VISUAL THREAT STATION | ACOUSTIC MONITORING ACTIVE", (15, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 2)
 
         return frame, ws_alerts
+    # -----------------------------------------------------------------
+    # CAM-05: DEDICATED AUTOMATIC & MANUAL NIGHT VISION PROCESSING ENGINE
+    # -----------------------------------------------------------------
+    def process_night_vision_standalone_frame(self, frame, camera_id="CAM-05"):
+        """
+        Automatic + Manual Night Vision test bench:
+        - In AUTO mode: Automatically computes scene mean luminance and engages LAB CLAHE if dark (< 85).
+        - In MANUAL ON mode: Forces LAB CLAHE enhancement on.
+        - In MANUAL OFF mode: Keeps standard unprocessed feed.
+        """
+        h, w = frame.shape[:2]
+        
+        # 1. Calculate average luminance across frame
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        mean_brightness = float(np.mean(gray))
+        
+        # 2. Determine if Night Vision should engage
+        if self.AUTO_NIGHT_MODE:
+            should_enhance = (mean_brightness < 85.0)
+            mode_label = "AUTO (ENGAGED)" if should_enhance else "AUTO (STANDBY)"
+        elif self.NIGHT_MODE_ENABLED:
+            should_enhance = True
+            mode_label = "MANUAL OVERRIDE: FORCED ON"
+        else:
+            should_enhance = False
+            mode_label = "MANUAL OVERRIDE: FORCED OFF"
 
+        # 3. Apply Adaptive CLAHE in LAB space if enabled
+        if should_enhance:
+            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(8, 8))
+            enhanced_l = clahe.apply(l)
+            enhanced_frame = cv2.cvtColor(cv2.merge((enhanced_l, a, b)), cv2.COLOR_LAB2BGR)
+            status_color = (0, 255, 0) # Green
+        else:
+            enhanced_frame = frame.copy()
+            status_color = (180, 180, 180) # Gray
+
+        # 4. Render Tactical Night Vision Telemetry HUD
+        cv2.rectangle(enhanced_frame, (0, 0), (w, 34), (10, 10, 20), -1)
+        cv2.putText(enhanced_frame, "GARUDA CAM-05: ADAPTIVE LAB NIGHT VISION SYSTEM", (15, 23), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 255), 2)
+        
+        # Bottom telemetry pill
+        cv2.rectangle(enhanced_frame, (20, h - 50), (w - 20, h - 15), (5, 8, 17), -1)
+        cv2.rectangle(enhanced_frame, (20, h - 50), (w - 20, h - 15), status_color, 1)
+        cv2.putText(enhanced_frame, f"MODE: {mode_label} | SCENE LUMINANCE: {mean_brightness:.1f} / 255.0", 
+                    (35, h - 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 1)
+
+        return enhanced_frame, []
     # -----------------------------------------------------------------
     # ROLLING CSV LOG RETENTION (MAX 2,000 ROWS -> PURGE OLDEST 1,000)
     # -----------------------------------------------------------------
@@ -458,9 +508,18 @@ class GarudaIntegratedAIEngine:
         return cv2.cvtColor(cv2.merge((enhanced_l, a, b)), cv2.COLOR_LAB2BGR)
 
     def emergency_toggle_night_vision(self):
-        self.AUTO_NIGHT_MODE = False
-        self.NIGHT_MODE_ENABLED = not self.NIGHT_MODE_ENABLED
-        status = "MANUAL ON" if self.NIGHT_MODE_ENABLED else "MANUAL OFF"
+        """Cycles through 3 states: AUTO -> MANUAL ON -> MANUAL OFF -> AUTO"""
+        if self.AUTO_NIGHT_MODE:
+            self.AUTO_NIGHT_MODE = False
+            self.NIGHT_MODE_ENABLED = True
+            status = "MANUAL ON"
+        elif self.NIGHT_MODE_ENABLED:
+            self.NIGHT_MODE_ENABLED = False
+            status = "MANUAL OFF"
+        else:
+            self.AUTO_NIGHT_MODE = True
+            self.NIGHT_MODE_ENABLED = False
+            status = "AUTO"
         return status, self.NIGHT_MODE_ENABLED
 
     def log_event(self, event_type, object_type, track_id, confidence, details="", evidence_file=""):
