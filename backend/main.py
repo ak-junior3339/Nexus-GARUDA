@@ -110,7 +110,8 @@ CAMERA_SOURCES = {
     "CAM-01": os.path.join(BASE_DIR, "ANPR", "input-videos", "I_want_to_remove_the_ANPR_dete.mp4"),
     "CAM-02": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396176_1920_1080_25fps.mp4"),
     "CAM-03": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396218_1920_1080_25fps.mp4"),
-    "CAM-04": 0  # Live WebCam / Acoustic Threat Station
+    "CAM-04": 0 , # Live WebCam / Acoustic Threat Station
+    "CAM-05": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "Low-Light Night Scene with Sony A6700  S-LOG3  4K - Second Order (1080p, h264).mp4")
 }
 
 # 8. REST ENDPOINTS
@@ -123,6 +124,7 @@ def get_cameras(db: Session = Depends(get_db)):
             {"id": "CAM-02", "name": "WATCHTOWER 01", "coords": "28.6200°N 77.2150°E"},
             {"id": "CAM-03", "name": "WATCHTOWER 02", "coords": "28.6100°N 77.2000°E"},
             {"id": "CAM-04", "name": "AUDIO-VISUAL THREAT STATION", "coords": "28.6050°N 77.1980°E"},
+            {"id": "CAM-05", "name": "NIGHT VISION", "coords": "28.6000°N 77.1950°E"}
         ]
     return cams
 
@@ -336,6 +338,8 @@ async def generate_single_active_stream(camera_id: str):
                 annotated_frame, alerts = ai_service.process_anpr_frame(raw_frame, camera_id=camera_id)
             elif "CAM-04" in camera_id:
                 annotated_frame, alerts = ai_service.process_cam4_audio_visual_frame(raw_frame, camera_id=camera_id)
+            elif "CAM-05" in camera_id or "NIGHT" in camera_id:
+                annotated_frame, alerts = ai_service.process_night_vision_standalone_frame(raw_frame, camera_id=camera_id)
             else:
                 annotated_frame, alerts = ai_service.process_watchtower_frame(raw_frame, camera_id=camera_id)
 
