@@ -153,10 +153,10 @@ A high-accuracy facial biometric and identity verification subsystem designed fo
 
 | Team Member | Core Responsibilities |
 | :--- | :--- |
-| **Akshat Jain** | Frontend UI/UX and Captcha |
+| **Akshat Jain** | Frontend UI/UX and Database|
 | **Archil Jakhetiya** | AI & ML Modeling (Facial Recognition)|
 | **Gourvi Jain** | Frontend UI/UX Engineering, Database Schema |
-| **Harshil Soni** | Frontend and Auth |
+| **Harshil Soni** | Database |
 | **Khushvardhan Johari** | Frontend, Backend & Database |
 | **Aishwarya Kumar Singh (ak_junior)** | (Team Leader) Computer Vision Architect, Admin Evidence Vault, AI - Web Integration (Watchtower & ANPR Engine Pipelines) |
 
