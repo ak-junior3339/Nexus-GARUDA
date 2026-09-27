@@ -22,9 +22,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from db.database import engine, get_db
+from db.database import engine, get_db, SessionLocal
 from db import models, crud, schemas
 from api.auth import router as auth_router, SECRET_KEY, ALGORITHM
 from services.ai_engine import ai_service
@@ -119,18 +120,24 @@ CAMERA_SOURCES = {
 def get_cameras(db: Session = Depends(get_db)):
     cams = crud.get_cameras(db)
     if not cams:
-        return [
-            {"id": "CAM-01", "name": "CHECKPOST ANPR", "coords": "28.6139°N 77.2090°E"},
-            {"id": "CAM-02", "name": "WATCHTOWER 01", "coords": "28.6200°N 77.2150°E"},
-            {"id": "CAM-03", "name": "WATCHTOWER 02", "coords": "28.6100°N 77.2000°E"},
-            {"id": "CAM-04", "name": "AUDIO-VISUAL THREAT STATION", "coords": "28.6050°N 77.1980°E"},
-            {"id": "CAM-05", "name": "NIGHT VISION", "coords": "28.6000°N 77.1950°E"}
-        ]
+        sync_camera_sources(db)
+        cams = crud.get_cameras(db)
     return cams
-
 @app.get("/api/v1/cameras/list")
-def list_available_cameras():
-    return [{"id": cam_id, "name": f"STATION {cam_id}"} for cam_id in CAMERA_SOURCES.keys()]
+def list_available_cameras(db: Session = Depends(get_db)):
+    cams = crud.get_cameras(db)
+    if not cams:
+        sync_camera_sources(db)
+        cams = crud.get_cameras(db)
+    return [
+        {
+            "id": cam.id,
+            "name": cam.name,
+            "coordinates": cam.coordinates,
+            "camera_type": cam.camera_type
+        }
+        for cam in cams
+    ]
 
 @app.post("/api/v1/cameras/silence")
 def silence_alarm():
@@ -144,6 +151,35 @@ def toggle_night_mode():
         "status": status_label,
         "is_enabled": is_enabled
     }
+
+class PreviewRequest(BaseModel):
+    stream_url: str
+
+@app.post("/api/v1/cameras/snapshot-preview")
+def grab_snapshot_preview(payload: PreviewRequest):
+    """Grabs the first frame of a webcam, video file, or RTSP stream for tripwire calibration."""
+    raw_url = str(payload.stream_url).strip()
+    src = int(raw_url) if raw_url.isdigit() else raw_url
+    
+    cap = cv2.VideoCapture(src)
+    if not cap.isOpened():
+        # Fallback to default WatchTower test video if custom path is not accessible
+        sample_path = os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396176_1920_1080_25fps.mp4")
+        cap = cv2.VideoCapture(sample_path)
+
+    ret, frame = cap.read()
+    cap.release()
+    
+    if not ret or frame is None:
+        frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        frame[:] = (10, 15, 25)
+        cv2.putText(frame, "STREAM FRAME NOT AVAILABLE", (550, 540), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 2)
+    else:
+        frame = cv2.resize(frame, (1920, 1080))
+        
+    _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    b64 = base64.b64encode(buf).decode('utf-8')
+    return {"image_data": f"data:image/jpeg;base64,{b64}"}
 
 @app.get("/api/v1/incidents")
 def get_incidents(db: Session = Depends(get_db)):
@@ -299,6 +335,93 @@ def create_no_signal_frame(camera_id: str, message="NO NETWORK / SIGNAL LOST"):
 
     _, buffer = cv2.imencode('.jpg', frame)
     return buffer.tobytes()
+
+def auto_migrate_db():
+    """Ensure all required columns exist in PostgreSQL."""
+    with engine.connect() as conn:
+        columns = [
+            ("camera_type", "VARCHAR(50) DEFAULT 'WATCHTOWER'"),
+            ("coordinates", "VARCHAR(100) DEFAULT '28.6139°N 77.2090°E'"),
+            ("stream_url", "VARCHAR(255) DEFAULT '0'"),
+            ("ai_features", "VARCHAR(255) DEFAULT 'INTRUSION,LOITERING,GROUP'"),
+            ("tripwire_coords", "VARCHAR(100) DEFAULT '0,650,1920,650'"),
+            ("is_active", "VARCHAR(20) DEFAULT 'active'")
+        ]
+        for col_name, col_def in columns:
+            try:
+                conn.execute(text(f"ALTER TABLE cameras ADD COLUMN IF NOT EXISTS {col_name} {col_def};"))
+                conn.commit()
+            except Exception as e:
+                print(f"Migration notice ({col_name}): {e}")
+def sync_camera_sources(db: Session):
+    auto_migrate_db()
+    defaults = [
+        {"id": "CAM-01", "name": "CHECKPOST ANPR", "camera_type": "CHECKPOST_ANPR", "coordinates": "28.6139°N 77.2090°E", "stream_url": os.path.join(BASE_DIR, "ANPR", "input-videos", "I_want_to_remove_the_ANPR_dete.mp4"), "ai_features": "ANPR_OCR,NIGHT_VISION"},
+        {"id": "CAM-02", "name": "WATCHTOWER 01", "camera_type": "WATCHTOWER", "coordinates": "28.6200°N 77.2150°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396176_1920_1080_25fps.mp4"), "ai_features": "INTRUSION,LOITERING,GROUP", "tripwire_coords": "0,650,1920,650"},
+        {"id": "CAM-03", "name": "WATCHTOWER 02", "camera_type": "WATCHTOWER", "coordinates": "28.6100°N 77.2000°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396218_1920_1080_25fps.mp4"), "ai_features": "INTRUSION,LOITERING,GROUP", "tripwire_coords": "350,0,350,1080"},
+        {"id": "CAM-04", "name": "AUDIO-VISUAL THREAT STATION", "camera_type": "ACOUSTIC", "coordinates": "28.6050°N 77.1980°E", "stream_url": "0", "ai_features": "GUNFIRE_AUDIO,SCREAM_DETECTION"},
+        {"id": "CAM-05", "name": "NIGHT VISION", "camera_type": "NIGHT_VISION", "coordinates": "28.6000°N 77.1950°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "Low-Light Night Scene with Sony A6700  S-LOG3  4K - Second Order (1080p, h264).mp4"), "ai_features": "AUTO_CLAHE_NIGHT_VISION"}
+    ]
+    for d in defaults:
+        cam_obj = crud.get_camera_by_id(db, d["id"])
+        if not cam_obj:
+            new_cam = models.Camera(
+                id=d["id"],
+                name=d["name"],
+                camera_type=d["camera_type"],
+                coordinates=d["coordinates"],
+                stream_url=d["stream_url"],
+                ai_features=d["ai_features"],
+                tripwire_coords=d.get("tripwire_coords"),
+                is_active="active"
+            )
+            db.add(new_cam)
+        else:
+            cam_obj.camera_type = d["camera_type"]
+            cam_obj.coordinates = d["coordinates"]
+            cam_obj.stream_url = d["stream_url"]
+            cam_obj.ai_features = d["ai_features"]
+            if d.get("tripwire_coords"):
+                cam_obj.tripwire_coords = d.get("tripwire_coords")
+    db.commit()
+    db_cams = crud.get_cameras(db)
+    for cam in db_cams:
+        raw_url = str(cam.stream_url) if cam.stream_url is not None else "0"
+        src = int(raw_url) if raw_url.isdigit() else raw_url
+        CAMERA_SOURCES[cam.id] = src
+        ai_service.register_dynamic_camera(cam.id, cam.camera_type or "WATCHTOWER", cam.tripwire_coords)
+@app.on_event("startup")
+def startup_populate_cameras():
+    auto_migrate_db()
+    db = SessionLocal()
+    try:
+        sync_camera_sources(db)
+    except Exception as e:
+        print(f"⚠️ Error during startup camera sync: {e}")
+    finally:
+        db.close()
+
+@app.post("/api/v1/admin/cameras")
+def provision_camera(payload: schemas.CameraCreate, db: Session = Depends(get_db)):
+    existing = crud.get_camera_by_id(db, payload.id)
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Camera ID '{payload.id}' already exists!")
+    
+    new_cam = crud.create_camera(db, payload)
+    raw_url = str(payload.stream_url) if payload.stream_url is not None else "0"
+    src = int(raw_url) if raw_url.isdigit() else raw_url
+    CAMERA_SOURCES[payload.id] = src
+    ai_service.register_dynamic_camera(payload.id, payload.camera_type, payload.tripwire_coords)
+    return new_cam
+
+@app.delete("/api/v1/admin/cameras/{camera_id}")
+def delete_camera(camera_id: str, db: Session = Depends(get_db)):
+    success = crud.delete_camera(db, camera_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    if camera_id in CAMERA_SOURCES:
+        del CAMERA_SOURCES[camera_id]
+    return {"message": f"Camera {camera_id} decommissioned"}
 
 async def generate_single_active_stream(camera_id: str):
     source = CAMERA_SOURCES.get(camera_id)
