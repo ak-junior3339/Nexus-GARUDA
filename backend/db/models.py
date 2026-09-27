@@ -24,11 +24,15 @@ class Camera(Base):
 
     id = Column(String(50), primary_key=True, index=True) # e.g., "CAM-01"
     name = Column(String(100), nullable=False)
-    coordinates = Column(String(100))
-    stream_url = Column(String(255))
+    camera_type = Column(String(50), default="WATCHTOWER") # "CHECKPOST_ANPR", "WATCHTOWER", "NIGHT_VISION", "ACOUSTIC"
+    coordinates = Column(String(100), default="28.6139°N 77.2090°E")
+    stream_url = Column(String(255), default="0")
+    ai_features = Column(String(255), default="INTRUSION,LOITERING,GROUP")
+    tripwire_coords = Column(String(100), default="0,650,1920,650") # x1,y1,x2,y2
+    is_active = Column(String(20), default="active")
 
     # Relationships
-    incidents = relationship("Incident", back_populates="camera")
+    incidents = relationship("Incident", back_populates="camera", cascade="all, delete-orphan")
 
 class Incident(Base):
     __tablename__ = "incidents"
