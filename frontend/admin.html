@@ -287,6 +287,34 @@
       </div>
     </section>
 
+    <!-- ============================= DYNAMIC CAMERA CONFIGURATION ============================= -->
+    <section class="admin-section" style="margin-top: 36px;">
+      <div class="admin-section__head" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2 style="font-family: var(--font-mono); font-size: 16px;">TACTICAL CAMERA NODES &amp; TRIPWIRE CALIBRATION</h2>
+        <button type="button" class="btn-primary" id="open-cam-provision-modal" onclick="document.getElementById('cam-provision-modal').classList.add('is-open')" style="background: #0284c7; color: #fff; border: 1px solid #38bdf8; padding: 6px 14px; font-family: var(--font-mono); cursor: pointer;">
+          + PROVISION NEW CAMERA NODE
+        </button>
+      </div>
+
+      <div class="admin-table-wrap" style="background: #0a0f1d; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden;">
+        <table class="data-table" id="camera-management-table" style="width: 100%; border-collapse: collapse; font-family: var(--font-mono);">
+          <thead>
+            <tr style="background: #04060c; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #94a3b8; text-align: left;">
+              <th style="padding: 10px 14px;">CAMERA ID</th>
+              <th style="padding: 10px 14px;">NAME &amp; SECTOR</th>
+              <th style="padding: 10px 14px;">TYPE</th>
+              <th style="padding: 10px 14px;">COORDINATES</th>
+              <th style="padding: 10px 14px;">ACTIVE AI MODULES</th>
+              <th style="padding: 10px 14px;">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="camera-table-body">
+            <!-- Rendered dynamically by app.js -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ============================= UNIFIED THREAT LOGS & EVIDENCE VAULT ============================= -->
     <section class="admin-section" style="margin-top: 36px;">
       <div class="admin-section__head" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -347,49 +375,119 @@
     </div>
   </div>
 
-  <!-- ============================= PROVISION OPERATOR MODAL ============================= -->
-  <div class="modal-overlay" id="provision-modal">
-    <div class="modal-card" style="background: #0a0f1d; border: 1px solid #3b42a4; padding: 24px; max-width: 440px; width: 100%; border-radius: 4px; font-family: var(--font-mono);">
-      <h3 style="margin-bottom: 16px; color: #fff; font-size: 15px; font-weight: bold; text-align: left;">PROVISION NEW OPERATOR</h3>
-      
-      <!-- INLINE ERROR ALERT BANNER -->
-      <div id="provision-error-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; padding: 10px 12px; border-radius: 4px; font-size: 11px; margin-bottom: 14px; align-items: center; gap: 8px;">
-        <span style="font-size: 14px;">⚠️</span>
-        <span id="provision-error-msg">User ID already exists! Please choose another ID.</span>
+    <!-- ============================= PROVISION CAMERA MODAL ============================= -->
+  <div class="modal-overlay" id="cam-provision-modal">
+    <div class="modal-card" style="background: #0a0f1d; border: 1px solid #0284c7; padding: 24px; max-width: 620px; width: 100%; border-radius: 6px; font-family: var(--font-mono); max-height: 90vh; overflow-y: auto;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+        <div>
+          <h3 style="color: #38bdf8; font-size: 15px; font-weight: bold; margin: 0; letter-spacing: 0.5px;">PROVISION TACTICAL CAMERA NODE</h3>
+          <span style="font-size: 11px; color: #94a3b8;">CONFIGURE REAL-TIME STREAM &amp; AI ANALYTICS HEAD</span>
+        </div>
+        <button type="button" id="close-cam-provision-modal" style="background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; line-height: 1;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'">&times;</button>
       </div>
 
-      <form id="provision-form" style="display: flex; flex-direction: column; gap: 14px;">
-        <div>
-          <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">USER ID</label>
-          <input type="text" id="new-user-id" placeholder="ID-0007" required style="width: 100%; padding: 8px; background: #04060d; border: 1px solid rgba(255,255,255,0.2); color: #fff; font-family: var(--font-mono); box-sizing: border-box;" />
+      <form id="cam-provision-form" style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="color: #94a3b8; font-size: 11px; display: block; margin-bottom: 4px;">CAMERA ID</label>
+            <input type="text" id="new-cam-id" required placeholder="CAM-06" style="width: 100%; padding: 8px; background: #04060c; border: 1px solid rgba(255,255,255,0.15); color: #fff; font-family: var(--font-mono); border-radius: 4px; box-sizing: border-box;" />
+          </div>
+          <div>
+            <label style="color: #94a3b8; font-size: 11px; display: block; margin-bottom: 4px;">STATION NAME</label>
+            <input type="text" id="new-cam-name" required placeholder="NORTH BUNKER FENCE" style="width: 100%; padding: 8px; background: #04060c; border: 1px solid rgba(255,255,255,0.15); color: #fff; font-family: var(--font-mono); border-radius: 4px; box-sizing: border-box;" />
+          </div>
         </div>
-        <div>
-          <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">FULL NAME</label>
-          <input type="text" id="new-full-name" placeholder="ENTER NAME" required style="width: 100%; padding: 8px; background: #04060d; border: 1px solid rgba(255,255,255,0.2); color: #fff; font-family: var(--font-mono); box-sizing: border-box;" />
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="color: #94a3b8; font-size: 11px; display: block; margin-bottom: 4px;">CAMERA ROLE / TYPE</label>
+            <select id="new-cam-type" style="width: 100%; padding: 8px; background: #04060c; border: 1px solid rgba(255,255,255,0.15); color: #fff; font-family: var(--font-mono); border-radius: 4px; box-sizing: border-box;">
+              <option value="WATCHTOWER">WATCHTOWER PERIMETER</option>
+              <option value="CHECKPOST_ANPR">CHECKPOST ANPR</option>
+              <option value="NIGHT_VISION">NIGHT VISION TESTBENCH</option>
+              <option value="ACOUSTIC">ACOUSTIC THREAT STATION</option>
+            </select>
+          </div>
+          <div>
+            <label style="color: #94a3b8; font-size: 11px; display: block; margin-bottom: 4px;">GEO-COORDINATES</label>
+            <input type="text" id="new-cam-coords" placeholder="28.6180°N 77.2120°E" value="28.6180°N 77.2120°E" style="width: 100%; padding: 8px; background: #04060c; border: 1px solid rgba(255,255,255,0.15); color: #fff; font-family: var(--font-mono); border-radius: 4px; box-sizing: border-box;" />
+          </div>
         </div>
+
         <div>
-          <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">ROLE</label>
-          <select id="new-clearance" style="width: 100%; padding: 8px; background: #04060d; border: 1px solid rgba(255,255,255,0.2); color: #fff; font-family: var(--font-mono); box-sizing: border-box;">
-            <option value="STANDARD OPERATOR">OPERATOR</option>
-            <option value="ADMIN">ADMIN</option>
-          </select>
+          <label style="color: #94a3b8; font-size: 11px; display: block; margin-bottom: 4px;">STREAM SOURCE (0 for WebCam, RTSP URL, or video path)</label>
+          <input type="text" id="new-cam-url" placeholder="0" value="0" required style="width: 100%; padding: 8px; background: #04060c; border: 1px solid rgba(255,255,255,0.15); color: #fff; font-family: var(--font-mono); border-radius: 4px; box-sizing: border-box;" />
         </div>
+
+        <!-- Plain Interactive Tripwire Calibration HUD with Live Frame -->
+        <div id="tripwire-config-box" style="background: rgba(4, 6, 13, 0.8); border: 1px solid #0284c7; border-radius: 6px; padding: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="display: inline-block; width: 8px; height: 8px; background: #38bdf8; border-radius: 50%;"></span>
+              <label style="color: #38bdf8; font-size: 11px; font-weight: bold; font-family: var(--font-mono); letter-spacing: 0.5px;">VIRTUAL TRIPWIRE CALIBRATION</label>
+            </div>
+            
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button type="button" onclick="GarudaTripwireCalibrator.loadCurrentFrame()" style="background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #fff; padding: 4px 10px; font-family: var(--font-mono); font-size: 10px; border-radius: 3px; cursor: pointer;">
+                📸 GRAB VIDEO FRAME
+              </button>
+            </div>
+          </div>
+
+          <!-- Tactical Presets -->
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+            <button type="button" class="tripwire-preset-btn" onclick="GarudaTripwireCalibrator.setPreset(0, 650, 1920, 650)" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(56, 189, 248, 0.3); color: #cbd5e1; padding: 4px 8px; border-radius: 3px; font-size: 10px; font-family: var(--font-mono); cursor: pointer;">
+              HORIZONTAL
+            </button>
+            <button type="button" class="tripwire-preset-btn" onclick="GarudaTripwireCalibrator.setPreset(960, 0, 960, 1080)" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(56, 189, 248, 0.3); color: #cbd5e1; padding: 4px 8px; border-radius: 3px; font-size: 10px; font-family: var(--font-mono); cursor: pointer;">
+              VERTICAL
+            </button>
+            <button type="button" class="tripwire-preset-btn" onclick="GarudaTripwireCalibrator.setPreset(200, 200, 1720, 880)" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(56, 189, 248, 0.3); color: #cbd5e1; padding: 4px 8px; border-radius: 3px; font-size: 10px; font-family: var(--font-mono); cursor: pointer;">
+              DIAGONAL
+            </button>
+            <button type="button" class="tripwire-preset-btn" onclick="GarudaTripwireCalibrator.setPreset(350, 0, 350, 1080)" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(56, 189, 248, 0.3); color: #cbd5e1; padding: 4px 8px; border-radius: 3px; font-size: 10px; font-family: var(--font-mono); cursor: pointer;">
+              BOTTLENECK
+            </button>
+          </div>
+
+          <!-- Plain Canvas Viewport (No overlay texts) -->
+          <div style="position: relative; width: 100%; height: 220px; background: #000000; border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 4px; overflow: hidden; cursor: crosshair; user-select: none;">
+            <canvas id="tripwire-canvas" width="550" height="220" style="width: 100%; height: 100%; display: block;"></canvas>
+          </div>
+
+          <!-- Coordinate Display -->
+          <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+            <input type="text" id="new-cam-tripwire" placeholder="0, 650, 1920, 650" value="0, 650, 1920, 650" style="flex: 1; padding: 6px 10px; background: #04060c; border: 1px solid rgba(255,255,255,0.15); color: #4ade80; font-family: var(--font-mono); font-size: 11px; border-radius: 3px;" />
+            <button type="button" onclick="GarudaTripwireCalibrator.syncFromInput()" style="background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #fff; padding: 6px 12px; font-family: var(--font-mono); font-size: 10px; border-radius: 3px; cursor: pointer;">
+              SYNC
+            </button>
+          </div>
+        </div>
+
+        <!-- AI Capabilities Checkboxes -->
         <div>
-          <label style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">PASSWORD</label>
-          <input type="password" id="new-password" placeholder="••••••••" required style="width: 100%; padding: 8px; background: #04060d; border: 1px solid rgba(255,255,255,0.2); color: #fff; font-family: var(--font-mono); box-sizing: border-box;" />
+          <label style="color: #94a3b8; font-size: 11px; display: block; margin-bottom: 6px;">DEPLOYED AI CAPABILITIES</label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; color: #e2e8f0;">
+            <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="ai-intrusion" checked /> Virtual Tripwire Incursion</label>
+            <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="ai-loiter" checked /> Loitering &amp; Pacing</label>
+            <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="ai-group" checked /> Group Convergence (3+)</label>
+            <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="ai-anpr" /> 36-State ANPR Plate OCR</label>
+            <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="ai-night" checked /> LAB Night Vision</label>
+            <label style="display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="ai-weapon" /> Weapon Detection Head [BETA]</label>
+          </div>
         </div>
-        <div style="display: flex; gap: 10px; margin-top: 12px;">
-          <button type="submit" class="btn-primary" style="flex: 1; padding: 10px; background: #3b42a4; color: #fff; border: 1px solid #818cf8; cursor: pointer; font-family: var(--font-mono); font-weight: bold; text-align: center; display: flex; align-items: center; justify-content: center;">
-            PROVISION
+
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+          <button type="submit" class="btn-primary" style="flex: 1; padding: 10px; background: #0284c7; color: #fff; font-family: var(--font-mono); font-weight: bold; border: 1px solid #38bdf8; cursor: pointer; text-align: center; border-radius: 4px;">
+            ACTIVATE &amp; DEPLOY CAMERA NODE
           </button>
-          <button type="button" id="cancel-provision" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; font-family: var(--font-mono); text-align: center; display: flex; align-items: center; justify-content: center;">
+          <button type="button" id="cancel-cam-provision" style="padding: 10px 18px; background: rgba(255,255,255,0.08); color: #fff; font-family: var(--font-mono); border: 1px solid rgba(255,255,255,0.15); cursor: pointer; border-radius: 4px;">
             CANCEL
           </button>
         </div>
       </form>
     </div>
   </div>
-
   <!-- ============================= ADMIN AUDIT LOGS MODAL ============================= -->
   <div class="modal-overlay" id="audit-logs-modal">
     <div class="modal-card" style="background: #0a0f1d; border: 1px solid #3b42a4; padding: 24px; max-width: 600px; width: 100%; border-radius: 4px; font-family: var(--font-mono);">
@@ -456,7 +554,7 @@
         </div>
       </div>
 
-            <!-- Detection Result Card -->
+      <!-- Detection Result Card -->
       <div id="face-results-card" style="display: none; margin-top: 14px; background: #04060c; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 14px;">
         <div style="display: flex; gap: 14px; align-items: flex-start;">
           <img id="face-result-preview" src="" style="width: 140px; height: 120px; object-fit: cover; border-radius: 4px; border: 1px solid #38bdf8;" />

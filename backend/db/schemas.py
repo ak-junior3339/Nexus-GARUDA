@@ -23,12 +23,19 @@ class UserResponse(UserBase):
 # --------------------------
 # CAMERA SCHEMAS
 # --------------------------
-class CameraResponse(BaseModel):
+class CameraBase(BaseModel):
     id: str
     name: str
-    coordinates: Optional[str] = None
-    stream_url: Optional[str] = None
+    camera_type: str = "WATCHTOWER"
+    coordinates: Optional[str] = "28.6139°N 77.2090°E"
+    stream_url: str = "0"
+    ai_features: Optional[str] = "INTRUSION,LOITERING,GROUP"
+    tripwire_coords: Optional[str] = "0,650,1920,650"
+    is_active: Optional[str] = "active"
 
+class CameraCreate(CameraBase):
+    pass
+class CameraResponse(CameraBase):
     model_config = ConfigDict(from_attributes=True)
 
 # --------------------------

@@ -423,6 +423,9 @@ const GarudaAdmin = {
     this._bindFaceModal();
     this._loadOperators();
     this.loadEvidenceVault();
+    
+    this.loadCameras();
+    this._bindCameraModal();
   },
 
   async _loadOperators() {
@@ -982,8 +985,159 @@ const GarudaAdmin = {
       </td>`;
     tbody.appendChild(row);
   },
-};
 
+  async loadCameras() {
+    const tbody = document.getElementById('camera-table-body');
+    if (!tbody) return;
+    try {
+      const res = await fetch(`${GarudaConfig.API_BASE_URL}/cameras`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const cameras = await res.json();
+      if (Array.isArray(cameras)) {
+        cameras.sort((a, b) => (a.id || '').localeCompare(b.id || '', undefined, { numeric: true }));
+      }
+      tbody.innerHTML = '';
+      if (!cameras || cameras.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b; padding: 25px;">NO CAMERAS CONFIGURED IN DATABASE.</td></tr>';
+        return;
+      }
+      cameras.forEach(cam => {
+        const tr = document.createElement('tr');
+        tr.dataset.camId = cam.id;
+        tr.innerHTML = `
+          <td style="padding: 10px 14px; font-weight: bold; color: #38bdf8;">${cam.id}</td>
+          <td style="padding: 10px 14px; color: #fff;">${cam.name}</td>
+          <td style="padding: 10px 14px;"><span style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">${cam.camera_type || 'WATCHTOWER'}</span></td>
+          <td style="padding: 10px 14px; color: #94a3b8; font-size: 11px;">${cam.coordinates || 'N/A'}</td>
+          <td style="padding: 10px 14px; color: #4ade80; font-size: 11px;">${cam.ai_features || 'DEFAULT'}</td>
+          <td style="padding: 10px 14px;">
+            <button type="button" class="btn-mini btn-mini--danger" data-cam-action="delete" style="cursor: pointer;">DECOMMISSION</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      console.error("Could not load cameras table:", err);
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 25px;">ERROR LOADING CAMERAS: ${err.message}</td></tr>`;
+    }
+  },
+
+    _bindCameraModal() {
+    const modal = document.getElementById('cam-provision-modal');
+    const openBtn = document.getElementById('open-cam-provision-modal');
+    const closeBtn = document.getElementById('close-cam-provision-modal');
+    const cancelBtn = document.getElementById('cancel-cam-provision');
+    const form = document.getElementById('cam-provision-form');
+    const typeSelect = document.getElementById('new-cam-type');
+    const tripwireBox = document.getElementById('tripwire-config-box');
+
+    if (!modal) return;
+
+   if (openBtn) {
+      openBtn.onclick = (e) => {
+        if (e) e.preventDefault();
+        modal.classList.add('is-open');
+        setTimeout(() => GarudaTripwireCalibrator.init(), 50);
+      };
+    }
+    if (closeBtn) {
+      closeBtn.onclick = (e) => {
+        if (e) e.preventDefault();
+        modal.classList.remove('is-open');
+      };
+    }
+    if (cancelBtn) {
+      cancelBtn.onclick = (e) => {
+        if (e) e.preventDefault();
+        modal.classList.remove('is-open');
+      };
+    }
+
+    // Close on clicking backdrop outside modal card
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        modal.classList.remove('is-open');
+      }
+    };
+
+    if (typeSelect && tripwireBox) {
+      typeSelect.onchange = () => {
+        tripwireBox.style.display = (typeSelect.value === 'WATCHTOWER') ? 'block' : 'none';
+      };
+    }
+
+    if (form) {
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const camId = document.getElementById('new-cam-id')?.value?.trim();
+        const camName = document.getElementById('new-cam-name')?.value?.trim();
+        const camType = document.getElementById('new-cam-type')?.value;
+        const camCoords = document.getElementById('new-cam-coords')?.value?.trim() || 'N/A';
+        const camUrl = document.getElementById('new-cam-url')?.value?.trim() || '0';
+        const tripwire = document.getElementById('new-cam-tripwire')?.value?.trim() || '';
+
+        const features = [];
+        if (document.getElementById('ai-intrusion')?.checked) features.push('INTRUSION');
+        if (document.getElementById('ai-loiter')?.checked) features.push('LOITERING');
+        if (document.getElementById('ai-group')?.checked) features.push('GROUP');
+        if (document.getElementById('ai-anpr')?.checked) features.push('ANPR_OCR');
+        if (document.getElementById('ai-night')?.checked) features.push('NIGHT_VISION');
+        if (document.getElementById('ai-weapon')?.checked) features.push('WEAPON_DETECTION');
+
+        const payload = {
+          id: camId,
+          name: camName,
+          camera_type: camType,
+          coordinates: camCoords,
+          stream_url: camUrl,
+          ai_features: features.join(','),
+          tripwire_coords: tripwire,
+          is_active: 'active'
+        };
+
+        try {
+          const res = await fetch(`${GarudaConfig.API_BASE_URL}/admin/cameras`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || `Server returned ${res.status}`);
+          }
+          GarudaToast.show(`Camera ${camId} provisioned successfully!`, 'success');
+          modal.classList.remove('is-open');
+          form.reset();
+          this.loadCameras();
+        } catch (err) {
+          GarudaToast.show(`Error: ${err.message}`, 'error');
+        }
+      };
+    }
+
+    // Decommission camera handler
+    const camTable = document.getElementById('camera-management-table');
+    if (camTable) {
+      camTable.onclick = async (e) => {
+        const btn = e.target.closest('button[data-cam-action="delete"]');
+        if (!btn) return;
+        const row = btn.closest('tr');
+        const camId = row?.dataset?.camId;
+        if (!camId || !window.confirm(`Decommission camera ${camId}?`)) return;
+
+        try {
+          const res = await fetch(`${GarudaConfig.API_BASE_URL}/admin/cameras/${camId}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Decommission failed');
+          GarudaToast.show(`Camera ${camId} decommissioned.`, 'default');
+          row.remove();
+        } catch (err) {
+          GarudaToast.show(`Failed to delete: ${err.message}`, 'error');
+        }
+      };
+    }
+  }
+  
+}
 /* ---------------------------------------------------------------------------
    DYNAMIC CAMERA ROTATION & NIGHT MODE
    --------------------------------------------------------------------------- */
@@ -1006,13 +1160,18 @@ const GarudaCameraViewer = {
   currentIndex: 0,
   nightModeEnabled: false,
 
-  async init() {
+    async init() {
     try {
       const res = await fetch(`${GarudaConfig.API_BASE_URL}/cameras/list`);
       if (res.ok) {
         const camList = await res.json();
         if (camList && camList.length > 0) {
           this.cameras = camList.map(c => c.id);
+          camList.forEach(c => {
+            camList.sort((a, b) => (a.id || '').localeCompare(b.id || '', undefined, { numeric: true }));
+            this.cameras = camList.map(c => c.id);
+            if (c.coordinates) this.cameraCoords[c.id] = c.coordinates;
+          });
         }
       }
     } catch {
@@ -1165,5 +1324,203 @@ const GarudaCameraViewer = {
         this.switchCamera(this.currentIndex + 1);
       }
     });
+  }
+};
+/* ---------------------------------------------------------------------------
+   TACTICAL VIRTUAL TRIPWIRE INTERACTIVE CALIBRATOR (HUD)
+   --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   TACTICAL VIRTUAL TRIPWIRE INTERACTIVE CALIBRATOR (WITH LIVE VIDEO FRAME)
+   --------------------------------------------------------------------------- */
+const GarudaTripwireCalibrator = {
+  canvas: null,
+  ctx: null,
+  bgImage: null,
+  isLoadingFrame: false,
+  p1: { x: 0, y: 650 },
+  p2: { x: 1920, y: 650 },
+  dragging: null,
+
+  init() {
+    this.canvas = document.getElementById('tripwire-canvas');
+    if (!this.canvas) return;
+    this.ctx = this.canvas.getContext('2d');
+    this._bindEvents();
+    this.loadCurrentFrame();
+    this.render();
+  },
+
+  async loadCurrentFrame() {
+    const urlInput = document.getElementById('new-cam-url');
+    const streamUrl = urlInput ? urlInput.value.trim() : '0';
+    this.isLoadingFrame = true;
+    this.render();
+
+    try {
+      const res = await fetch(`${GarudaConfig.API_BASE_URL}/cameras/snapshot-preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stream_url: streamUrl })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const img = new Image();
+        img.onload = () => {
+          this.bgImage = img;
+          this.isLoadingFrame = false;
+          this.render();
+        };
+        img.src = data.image_data;
+      } else {
+        this.isLoadingFrame = false;
+        this.render();
+      }
+    } catch (err) {
+      console.warn("Could not grab video preview frame:", err);
+      this.isLoadingFrame = false;
+      this.render();
+    }
+  },
+
+  setPreset(x1, y1, x2, y2) {
+    this.p1 = { x: x1, y: y1 };
+    this.p2 = { x: x2, y: y2 };
+    this._updateInputAndHUD();
+    this.render();
+  },
+
+  syncFromInput() {
+    const input = document.getElementById('new-cam-tripwire');
+    if (!input) return;
+    const parts = input.value.split(',').map(v => parseInt(v.trim()));
+    if (parts.length === 4 && parts.every(n => !isNaN(n))) {
+      this.p1 = { x: parts[0], y: parts[1] };
+      this.p2 = { x: parts[2], y: parts[3] };
+      this._updateHUD();
+      this.render();
+    }
+  },
+
+  _updateInputAndHUD() {
+    const input = document.getElementById('new-cam-tripwire');
+    if (input) {
+      input.value = `${Math.round(this.p1.x)}, ${Math.round(this.p1.y)}, ${Math.round(this.p2.x)}, ${Math.round(this.p2.y)}`;
+    }
+    this._updateHUD();
+  },
+
+  _updateHUD() {
+    const hud = document.getElementById('tripwire-hud-telemetry');
+    if (!hud) return;
+    const dx = this.p2.x - this.p1.x;
+    const dy = this.p2.y - this.p1.y;
+    const length = Math.round(Math.sqrt(dx * dx + dy * dy));
+    const angle = (Math.atan2(dy, dx) * (180 / Math.PI)).toFixed(1);
+    hud.textContent = `LENGTH: ${length}px | ANGLE: ${angle}°`;
+  },
+
+  _toScreen(p) {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    return {
+      x: (p.x / 1920) * w,
+      y: (p.y / 1080) * h
+    };
+  },
+
+  _toWorld(screenX, screenY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    const cx = (screenX - rect.left) * scaleX;
+    const cy = (screenY - rect.top) * scaleY;
+    return {
+      x: Math.min(1920, Math.max(0, (cx / this.canvas.width) * 1920)),
+      y: Math.min(1080, Math.max(0, (cy / this.canvas.height) * 1080))
+    };
+  },
+
+  _bindEvents() {
+    this.canvas.addEventListener('mousedown', (e) => {
+      const w = this._toWorld(e.clientX, e.clientY);
+      const s = this._toScreen(w);
+      const sp1 = this._toScreen(this.p1);
+      const sp2 = this._toScreen(this.p2);
+
+      const d1 = Math.hypot(s.x - sp1.x, s.y - sp1.y);
+      const d2 = Math.hypot(s.x - sp2.x, s.y - sp2.y);
+
+      if (d1 < 16) {
+        this.dragging = 'p1';
+      } else if (d2 < 16) {
+        this.dragging = 'p2';
+      } else {
+        this.p1 = w;
+        this.p2 = w;
+        this.dragging = 'p2';
+      }
+      this._updateInputAndHUD();
+      this.render();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!this.dragging) return;
+      const w = this._toWorld(e.clientX, e.clientY);
+      if (this.dragging === 'p1') this.p1 = w;
+      if (this.dragging === 'p2') this.p2 = w;
+      this._updateInputAndHUD();
+      this.render();
+    });
+
+    window.addEventListener('mouseup', () => {
+      this.dragging = null;
+    });
+  },
+
+  render() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    // 1. Plain Background (or grabbed video frame if available)
+    if (this.bgImage) {
+      ctx.drawImage(this.bgImage, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = '#050811';
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    const s1 = this._toScreen(this.p1);
+    const s2 = this._toScreen(this.p2);
+
+    // 2. Crisp Neon Laser Line
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = '#00f2ff';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(s1.x, s1.y);
+    ctx.lineTo(s2.x, s2.y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // 3. Point A (Origin Handle)
+    ctx.fillStyle = '#0284c7';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(s1.x, s1.y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // 4. Point B (End Handle)
+    ctx.fillStyle = '#10b981';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(s2.x, s2.y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 };
