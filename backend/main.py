@@ -19,7 +19,7 @@ from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "face_detection"))
 
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
@@ -81,7 +81,8 @@ class ConnectionManager:
                     pass
 
 manager = ConnectionManager()
-
+# Active stream kill switches: camera_id -> asyncio.Event
+ACTIVE_STREAMS: Dict[str, asyncio.Event] = {}
 # 5. MOUNT AUTH ROUTER
 app.include_router(auth_router, prefix="/api/v1")
 
@@ -356,11 +357,11 @@ def auto_migrate_db():
 def sync_camera_sources(db: Session):
     auto_migrate_db()
     defaults = [
-        {"id": "CAM-01", "name": "CHECKPOST ANPR", "camera_type": "CHECKPOST_ANPR", "coordinates": "28.6139°N 77.2090°E", "stream_url": os.path.join(BASE_DIR, "ANPR", "input-videos", "I_want_to_remove_the_ANPR_dete.mp4"), "ai_features": "ANPR_OCR,NIGHT_VISION"},
-        {"id": "CAM-02", "name": "WATCHTOWER 01", "camera_type": "WATCHTOWER", "coordinates": "28.6200°N 77.2150°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396176_1920_1080_25fps.mp4"), "ai_features": "INTRUSION,LOITERING,GROUP", "tripwire_coords": "0,650,1920,650"},
-        {"id": "CAM-03", "name": "WATCHTOWER 02", "camera_type": "WATCHTOWER", "coordinates": "28.6100°N 77.2000°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396218_1920_1080_25fps.mp4"), "ai_features": "INTRUSION,LOITERING,GROUP", "tripwire_coords": "350,0,350,1080"},
-        {"id": "CAM-04", "name": "AUDIO-VISUAL THREAT STATION", "camera_type": "ACOUSTIC", "coordinates": "28.6050°N 77.1980°E", "stream_url": "0", "ai_features": "GUNFIRE_AUDIO,SCREAM_DETECTION"},
-        {"id": "CAM-05", "name": "NIGHT VISION", "camera_type": "NIGHT_VISION", "coordinates": "28.6000°N 77.1950°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "Low-Light Night Scene with Sony A6700  S-LOG3  4K - Second Order (1080p, h264).mp4"), "ai_features": "AUTO_CLAHE_NIGHT_VISION"}
+        {"id": "CAM-01", "name": "CHECKPOST 01 (ANPR)", "camera_type": "CHECKPOST_ANPR", "coordinates": "28.6139°N 77.2090°E", "stream_url": os.path.join(BASE_DIR, "ANPR", "input-videos", "I_want_to_remove_the_ANPR_dete.mp4"), "ai_features": "ANPR_OCR,NIGHT_VISION"},
+        {"id": "CAM-02", "name": "WATCHTOWER NORTH", "camera_type": "WATCHTOWER", "coordinates": "28.6200°N 77.2150°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396176_1920_1080_25fps.mp4"), "ai_features": "INTRUSION,LOITERING,GROUP", "tripwire_coords": "0,650,1920,650"},
+        {"id": "CAM-03", "name": "WATCHTOWER EAST", "camera_type": "WATCHTOWER", "coordinates": "28.6100°N 77.2000°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "15396218_1920_1080_25fps.mp4"), "ai_features": "INTRUSION,LOITERING,GROUP", "tripwire_coords": "350,0,350,1080"},
+        {"id": "CAM-04", "name": "ACOUSTIC PERIMETER STATION", "camera_type": "ACOUSTIC", "coordinates": "28.6050°N 77.1980°E", "stream_url": "0", "ai_features": "GUNFIRE_AUDIO,SCREAM_DETECTION"},
+        {"id": "CAM-05", "name": "NIGHT VISION TESTBENCH", "camera_type": "NIGHT_VISION", "coordinates": "28.6000°N 77.1950°E", "stream_url": os.path.join(BASE_DIR, "WatchTower surveillance", "test-input", "Low-Light Night Scene with Sony A6700  S-LOG3  4K - Second Order (1080p, h264).mp4"), "ai_features": "AUTO_CLAHE_NIGHT_VISION"}
     ]
     for d in defaults:
         cam_obj = crud.get_camera_by_id(db, d["id"])
@@ -377,6 +378,7 @@ def sync_camera_sources(db: Session):
             )
             db.add(new_cam)
         else:
+            cam_obj.name = d["name"]
             cam_obj.camera_type = d["camera_type"]
             cam_obj.coordinates = d["coordinates"]
             cam_obj.stream_url = d["stream_url"]
@@ -425,10 +427,16 @@ def delete_camera(camera_id: str, db: Session = Depends(get_db)):
 
 async def generate_single_active_stream(camera_id: str):
     source = CAMERA_SOURCES.get(camera_id)
+
+    # Register a kill switch for this stream
+    stop_event = asyncio.Event()
+    ACTIVE_STREAMS[camera_id] = stop_event
+
     if source is None:
         frame_bytes = create_no_signal_frame(camera_id, "CAMERA NOT CONFIGURED")
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        ACTIVE_STREAMS.pop(camera_id, None)
         return
 
     cap = cv2.VideoCapture(source)
@@ -438,12 +446,13 @@ async def generate_single_active_stream(camera_id: str):
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         cap.release()
+        ACTIVE_STREAMS.pop(camera_id, None)
         return
 
     print(f"🟢 [ACTIVE INFERENCE STARTED] {camera_id}")
 
     try:
-        while True:
+        while not stop_event.is_set():
             success, raw_frame = cap.read()
             if not success:
                 if isinstance(source, str) and os.path.exists(source):
@@ -474,21 +483,51 @@ async def generate_single_active_stream(camera_id: str):
 
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            
+
             await asyncio.sleep(0.03)
 
     except asyncio.CancelledError:
-        print(f"🛑 [INFERENCE STOPPED] Switched away from {camera_id}.")
+        print(f"🛑 [INFERENCE STOPPED] Stream cancelled for {camera_id}.")
     finally:
+        print(f"🔒 [STREAM RELEASED] {camera_id} stopped and resources freed.")
         ai_service.stop_siren()
         cap.release()
+        ACTIVE_STREAMS.pop(camera_id, None)
+
 
 @app.get("/api/v1/cameras/{camera_id}/stream")
 async def video_feed(camera_id: str):
+    # Stop any existing stream for this camera before starting a new one
+    existing = ACTIVE_STREAMS.get(camera_id)
+    if existing:
+        existing.set()
+        await asyncio.sleep(0.1)
+
     return StreamingResponse(
         generate_single_active_stream(camera_id),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
+
+@app.post("/api/v1/cameras/{camera_id}/stop")
+async def stop_camera_stream(camera_id: str):
+    """Immediately kill active AI inference for a specific camera."""
+    event = ACTIVE_STREAMS.get(camera_id)
+    if event:
+        event.set()
+        print(f"🛑 [KILLED] Stream inference stopped for {camera_id} by client request.")
+        return {"status": "stopped", "camera_id": camera_id}
+    return {"status": "not_running", "camera_id": camera_id}
+
+
+@app.post("/api/v1/cameras/stop-all")
+async def stop_all_streams():
+    """Kill ALL active camera inference loops — called on logout."""
+    stopped = []
+    for cam_id, event in list(ACTIVE_STREAMS.items()):
+        event.set()
+        stopped.append(cam_id)
+    print(f"🔴 [KILL ALL] Stopped streams: {stopped}")
+    return {"status": "all_stopped", "stopped": stopped}
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["backend"])
