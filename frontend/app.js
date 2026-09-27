@@ -209,11 +209,22 @@ const GarudaAuth = {
     }
   },
 
-  async logout(redirectTo = 'login.html') {
+    async logout(redirectTo = 'login.html') {
     const session = GarudaAuthStore.getSession();
     if (session) {
       GarudaAuditStore.addLog(session.userId, 'USER LOGGED OUT');
     }
+
+    // Kill ALL running AI inference streams server-side immediately
+    try {
+      await fetch(`${GarudaConfig.API_BASE_URL}/cameras/stop-all`, { method: 'POST' });
+    } catch {}
+
+    // Cut frontend stream img connection
+    const streamImg = document.getElementById('active-camera-stream');
+    if (streamImg) streamImg.src = '';
+    GarudaSocket.disconnect();
+
     try {
       if (GarudaConfig.BACKEND_ENABLED) await GarudaAPI.logout();
     } catch {
@@ -221,7 +232,7 @@ const GarudaAuth = {
       GarudaAuthStore.clear();
       window.location.href = redirectTo;
     }
-  },
+  },  
 };
 
 /* ---------------------------------------------------------------------------
@@ -426,6 +437,7 @@ const GarudaAdmin = {
     
     this.loadCameras();
     this._bindCameraModal();
+    setTimeout(() => GarudaGISMap.init(), 100);
   },
 
   async _loadOperators() {
@@ -995,6 +1007,7 @@ const GarudaAdmin = {
       const cameras = await res.json();
       if (Array.isArray(cameras)) {
         cameras.sort((a, b) => (a.id || '').localeCompare(b.id || '', undefined, { numeric: true }));
+        GarudaGISMap.plotCameras(cameras); // Updates GIS Map automatically!
       }
       tbody.innerHTML = '';
       if (!cameras || cameras.length === 0) {
@@ -1129,7 +1142,7 @@ const GarudaAdmin = {
           const res = await fetch(`${GarudaConfig.API_BASE_URL}/admin/cameras/${camId}`, { method: 'DELETE' });
           if (!res.ok) throw new Error('Decommission failed');
           GarudaToast.show(`Camera ${camId} decommissioned.`, 'default');
-          row.remove();
+          this.loadCameras(); // Refreshes both Table and GIS Map!
         } catch (err) {
           GarudaToast.show(`Failed to delete: ${err.message}`, 'error');
         }
@@ -1254,6 +1267,11 @@ const GarudaCameraViewer = {
   switchCamera(index) {
     if (index < 0) index = this.cameras.length - 1;
     if (index >= this.cameras.length) index = 0;
+    // Stop the currently running inference before switching
+    const oldCamId = this.cameras[this.currentIndex];
+    if (oldCamId) {
+      fetch(`${GarudaConfig.API_BASE_URL}/cameras/${oldCamId}/stop`, { method: 'POST' }).catch(() => {});
+    }
     this.currentIndex = index;
 
     const camId = this.cameras[this.currentIndex];
@@ -1524,3 +1542,182 @@ const GarudaTripwireCalibrator = {
     ctx.stroke();
   }
 };
+/* ---------------------------------------------------------------------------
+   TACTICAL GIS GEOSPATIAL MAP & GEOCODING CONTROLLER
+   --------------------------------------------------------------------------- */
+const GarudaGISMap = {
+  map: null,
+  markersLayer: null,
+  clickMarker: null,
+  camerasData: [],
+
+  init() {
+    const mapContainer = document.getElementById('tactical-gis-map');
+    if (!mapContainer || this.map) return;
+
+    // Initialize Leaflet Map centered over Base / NCR Grid
+    this.map = L.map('tactical-gis-map', {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([28.6139, 77.2090], 13);
+
+    // 100% Free OpenStreetMap with Military Cyber Radar Filter (Zero API key / No Watermark)
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      className: 'tactical-dark-tiles'
+    }).addTo(this.map);
+
+    this.markersLayer = L.layerGroup().addTo(this.map);
+
+    // Click-to-Coordinate Handler
+    this.map.on('click', (e) => {
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+      const formattedCoords = this.formatCoords(lat, lng);
+
+      const display = document.getElementById('gis-coords-display');
+      if (display) display.textContent = `COORDS: ${formattedCoords}`;
+
+      // Show temporary pin with quick provision button
+      if (this.clickMarker) this.map.removeLayer(this.clickMarker);
+      
+      const pinIcon = L.divIcon({
+        className: 'custom-pin',
+        html: `<div style="width:14px; height:14px; background:#ef4444; border:2px solid #fff; border-radius:50%; box-shadow:0 0 10px #ef4444;"></div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      });
+
+      this.clickMarker = L.marker([lat, lng], { icon: pinIcon }).addTo(this.map);
+      this.clickMarker.bindPopup(`
+        <div style="font-size:11px; font-family:var(--font-mono); line-height:1.4;">
+          <div style="color:#ef4444; font-weight:bold; margin-bottom:4px;">📍 SELECTED COORDINATE</div>
+          <div style="color:#cbd5e1; margin-bottom:8px;">${formattedCoords}</div>
+          <button type="button" onclick="GarudaGISMap.provisionAtCoords('${formattedCoords}')" style="background:#0284c7; color:#fff; border:1px solid #38bdf8; padding:4px 8px; font-size:10px; cursor:pointer; width:100%; border-radius:3px;">
+            + PROVISION CAMERA HERE
+          </button>
+        </div>
+      `).openPopup();
+    });
+  },
+
+  parseCoords(str) {
+    if (!str || typeof str !== 'string') return null;
+    // Parses both "28.6139°N 77.2090°E" and "28.6139, 77.2090"
+    const match = str.match(/([0-9.]+)\s*°?\s*([NS])?[,\s]+([0-9.]+)\s*°?\s*([EW])?/i);
+    if (match) {
+      let lat = parseFloat(match[1]);
+      let lng = parseFloat(match[3]);
+      if (match[2] && match[2].toUpperCase() === 'S') lat = -lat;
+      if (match[4] && match[4].toUpperCase() === 'W') lng = -lng;
+      return { lat, lng };
+    }
+    return null;
+  },
+
+  formatCoords(lat, lng) {
+    const latDir = lat >= 0 ? 'N' : 'S';
+    const lngDir = lng >= 0 ? 'E' : 'W';
+    return `${Math.abs(lat).toFixed(4)}°${latDir} ${Math.abs(lng).toFixed(4)}°${lngDir}`;
+  },
+
+  plotCameras(cameras) {
+    if (!this.map) this.init();
+    if (!this.markersLayer) return;
+    this.markersLayer.clearLayers();
+    this.camerasData = cameras || [];
+
+    const bounds = [];
+
+    this.camerasData.forEach(cam => {
+      const parsed = this.parseCoords(cam.coordinates);
+      if (parsed && !isNaN(parsed.lat) && !isNaN(parsed.lng)) {
+        bounds.push([parsed.lat, parsed.lng]);
+
+        const markerHtml = `<div class="gis-cam-marker">${cam.id.replace('CAM-', '')}</div>`;
+        const customIcon = L.divIcon({
+          className: 'custom-gis-cam',
+          html: markerHtml,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        const marker = L.marker([parsed.lat, parsed.lng], { icon: customIcon });
+        marker.bindPopup(`
+          <div style="font-size:11px; font-family:var(--font-mono); line-height:1.5;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:4px; margin-bottom:6px;">
+              <strong style="color:#38bdf8;">${cam.id}</strong>
+              <span style="background:rgba(56,189,248,0.2); color:#38bdf8; font-size:9px; padding:1px 5px; border-radius:2px;">${cam.camera_type || 'WATCHTOWER'}</span>
+            </div>
+            <div style="color:#fff; font-weight:bold;">${cam.name || 'TACTICAL STATION'}</div>
+            <div style="color:#94a3b8; font-size:10px; margin-top:3px;">GEO: ${cam.coordinates || 'N/A'}</div>
+            <div style="color:#4ade80; font-size:10px;">AI: ${cam.ai_features || 'DEFAULT'}</div>
+          </div>
+        `);
+        this.markersLayer.addLayer(marker);
+      }
+    });
+
+    if (bounds.length > 0) {
+      this.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+    }
+  },
+
+  fitAllCameras() {
+    if (!this.map || this.camerasData.length === 0) return;
+    const bounds = [];
+    this.camerasData.forEach(cam => {
+      const parsed = this.parseCoords(cam.coordinates);
+      if (parsed) bounds.push([parsed.lat, parsed.lng]);
+    });
+    if (bounds.length > 0) {
+      this.map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  },
+
+  async searchGeocode() {
+    const input = document.getElementById('gis-search-input');
+    if (!input || !input.value.trim()) return;
+    const query = input.value.trim();
+
+    // Check if user entered direct coordinates
+    const directCoords = this.parseCoords(query);
+    if (directCoords) {
+      this.map.setView([directCoords.lat, directCoords.lng], 15);
+      return;
+    }
+
+    // Otherwise use OpenStreetMap Nominatim Geocoder API
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const item = data[0];
+        const lat = parseFloat(item.lat);
+        const lon = parseFloat(item.lon);
+        this.map.setView([lat, lon], 14);
+        GarudaToast.show(`Located: ${item.display_name.split(',')[0]}`, 'success');
+      } else {
+        GarudaToast.show("Location not found. Try coordinates (e.g. 28.6180, 77.2120)", 'error');
+      }
+    } catch (err) {
+      console.warn("Geocoding service error:", err);
+      GarudaToast.show("Geocoding request failed.", 'error');
+    }
+  },
+
+  provisionAtCoords(coords) {
+    const modal = document.getElementById('cam-provision-modal');
+    const coordsInput = document.getElementById('new-cam-coords');
+    if (coordsInput) coordsInput.value = coords;
+    if (modal) {
+      modal.classList.add('is-open');
+      setTimeout(() => GarudaTripwireCalibrator.init(), 50);
+    }
+  }
+};
+window.addEventListener('beforeunload', () => {
+  const streamImg = document.getElementById('active-camera-stream');
+  if (streamImg) streamImg.src = '';
+  GarudaSocket.disconnect();
+});
