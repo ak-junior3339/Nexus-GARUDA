@@ -55,8 +55,32 @@ def delete_user(db: Session, user_id: str):
 # CAMERA OPERATIONS
 # ==========================================
 def get_cameras(db: Session):
-    """Fetch all cameras."""
-    return db.query(models.Camera).all()
+    return db.query(models.Camera).order_by(models.Camera.id.asc()).all()
+
+def get_camera_by_id(db: Session, camera_id: str):
+    return db.query(models.Camera).filter(models.Camera.id == camera_id).first()
+def create_camera(db: Session, camera: schemas.CameraCreate):
+    db_camera = models.Camera(
+        id=camera.id,
+        name=camera.name,
+        camera_type=camera.camera_type,
+        coordinates=camera.coordinates,
+        stream_url=camera.stream_url,
+        ai_features=camera.ai_features,
+        tripwire_coords=camera.tripwire_coords,
+        is_active="active"
+    )
+    db.add(db_camera)
+    db.commit()
+    db.refresh(db_camera)
+    return db_camera
+def delete_camera(db: Session, camera_id: str):
+    cam = get_camera_by_id(db, camera_id)
+    if cam:
+        db.delete(cam)
+        db.commit()
+        return True
+    return False
 
 # ==========================================
 # INCIDENT (ALERT & EVIDENCE) OPERATIONS
