@@ -451,6 +451,21 @@ class GarudaIntegratedAIEngine:
                     (35, h - 26), cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 1)
 
         return enhanced_frame, []
+    
+    # -----------------------------------------------------------------
+    # DYNAMIC CAMERA & TRIPWIRE CALIBRATION
+    # -----------------------------------------------------------------
+    def register_dynamic_camera(self, camera_id: str, camera_type: str, tripwire_str: str = None):
+        """Dynamically registers or updates tripwire and configuration for a camera."""
+        if tripwire_str and camera_type == "WATCHTOWER":
+            try:
+                coords = [int(v.strip()) for v in str(tripwire_str).split(',')]
+                if len(coords) == 4:
+                    self.tripwire_lines[camera_id] = LineString([(coords[0], coords[1]), (coords[2], coords[3])])
+                    print(f"🎯 [TRIPWIRE CALIBRATED] {camera_id}: ({coords[0]},{coords[1]}) -> ({coords[2]},{coords[3]})")
+            except Exception as e:
+                print(f"⚠️ Tripwire parse error on {camera_id}: {e}")
+                
     # -----------------------------------------------------------------
     # ROLLING CSV LOG RETENTION (MAX 2,000 ROWS -> PURGE OLDEST 1,000)
     # -----------------------------------------------------------------
@@ -1045,5 +1060,15 @@ class GarudaIntegratedAIEngine:
         except Exception as e:
             print(f"❌ Error in process_anpr_frame: {e}")
             return frame, []
+
+        def register_dynamic_camera(self, camera_id: str, camera_type: str, tripwire_str: str = None):
+            if tripwire_str:
+                try:
+                    coords = [int(v.strip()) for v in tripwire_str.split(',')]
+                    if len(coords) == 4:
+                        self.tripwire_lines[camera_id] = LineString([(coords[0], coords[1]), (coords[2], coords[3])])
+                        print(f"🎯 [TRIPWIRE CALIBRATED] {camera_id}: ({coords[0]},{coords[1]}) -> ({coords[2]},{coords[3]})")
+                except Exception as e:
+                    print(f"⚠️ Tripwire parse error on {camera_id}: {e}")
 
 ai_service = GarudaIntegratedAIEngine()
