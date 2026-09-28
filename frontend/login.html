@@ -116,25 +116,25 @@
 </div>
 
 <!-- ============================= FACIAL VERIFICATION LOGIN MODAL ============================= -->
-<div class="image-modal-overlay" id="face-login-modal" style="display: none; position: fixed; inset: 0; background: rgba(2, 6, 23, 0.92); backdrop-filter: blur(10px); z-index: 9999; align-items: center; justify-content: center;">
-  <div style="background: #0a0f1d; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; width: 440px; max-width: 90vw; padding: 20px; box-shadow: 0 0 30px rgba(56, 189, 248, 0.2); text-align: center; font-family: var(--font-mono);">
-    <div style="font-size: 14px; font-weight: bold; color: #38bdf8; margin-bottom: 8px; text-transform: uppercase;">
-      🛡️ STEP 2: BIOMETRIC FACIAL VERIFICATION
+<div class="image-modal-overlay" id="face-login-modal" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0); backdrop-filter: blur(5px); z-index: 9999; align-items: center; justify-content: center;">
+  <div style="background: #000000; border-radius: 8px; width: 440px; max-width: 90vw; padding: 20px; box-shadow: 0 0 30px rgba(56, 189, 248, 0.2); text-align: center; font-family: var(--font-mono);">
+    <div style="font-size: 14px; font-weight: bold; color: #ffffff; margin-bottom: 8px; text-transform: uppercase;">
+      BIOMETRIC FACE VERIFICATION
     </div>
-    <p style="font-size: 11px; color: #94a3b8; margin-bottom: 14px;">Look into your camera and click Verify Face to authorize login.</p>
+    <p style="font-size: 11px; color: #94a3b8; margin-bottom: 14px;">Keep your face visible and Look towards your camera and click Verify Face to authorize login.</p>
     
     <div style="position: relative; width: 100%; height: 260px; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 14px;">
       <video id="face-login-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
       <canvas id="face-login-canvas" style="display: none;"></canvas>
     </div>
 
-    <div id="face-login-status" style="font-size: 11px; font-weight: bold; color: #fde047; padding: 6px; margin-bottom: 12px; display: none; background: rgba(234, 179, 8, 0.1); border-radius: 4px;">
-      ⏳ INITIALIZING CAMERA...
+    <div id="face-login-status" style="font-size: 11px; font-weight: bold; color: #ffffff; padding: 6px; margin-bottom: 12px; display: none; background: rgba(0,0,0,0); border-radius: 4px;">
+      INITIALIZING CAMERA...
     </div>
 
     <div style="display: flex; gap: 10px;">
-      <button type="button" id="cancel-face-login" style="flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 8px; border-radius: 4px; font-family: var(--font-mono); cursor: pointer;">CANCEL</button>
-      <button type="button" id="verify-face-login-btn" style="flex: 2; background: #0284c7; border: 1px solid #38bdf8; color: #fff; padding: 8px; font-weight: bold; border-radius: 4px; font-family: var(--font-mono); cursor: pointer;">VERIFY FACE &amp; ENTER</button>
+      <button type="button" id="cancel-face-login" style="flex: 1; background: rgba(0,0,0,0); border: 1px solid black; color: red; padding: 8px; border-radius: 4px; font-family: var(--font-mono); cursor: pointer;">CANCEL</button>
+      <button type="button" id="verify-face-login-btn" style="flex: 2; background: green; border: 1px solid green; color: #fff; padding: 8px; font-weight: bold; border-radius: 4px; font-family: var(--font-mono); cursor: pointer;">VERIFY FACE &amp; ENTER</button>
     </div>
   </div>
 </div>
