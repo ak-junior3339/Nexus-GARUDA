@@ -319,6 +319,57 @@ async def api_face_detect(payload: FaceDetectPayload):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Face detection failed: {str(e)}")
 
+@app.post("/api/v1/incidents/{incident_id}/detect-face")
+async def detect_incident_face(incident_id: str, db: Session = Depends(get_db)):
+    """Detects and identifies faces in a stored evidence image from the database."""
+    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    if not incident or not incident.image_data:
+        raise HTTPException(status_code=404, detail="Incident or evidence image not found")
+
+    try:
+        header_data = incident.image_data
+        if "," in header_data:
+            header_data = header_data.split(",")[1]
+        img_bytes = base64.b64decode(header_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Invalid evidence image payload")
+
+        from load_model import get_app
+        from match import load_known_faces, identify
+
+        app_face = get_app()
+        known_faces_path = os.path.join(BASE_DIR, "face_detection", "known_faces.pkl")
+        known_faces = load_known_faces(known_faces_path) if os.path.exists(known_faces_path) else {}
+
+        faces = app_face.get(frame)
+        if not faces or len(faces) == 0:
+            return {"recognized": False, "message": "❌ NO FACE DETECTED IN EVIDENCE IMAGE"}
+
+        matches = []
+        for face in faces:
+            name, sim = identify(face.embedding, known_faces, threshold=0.45)
+            if name != "Unknown":
+                matches.append(f"{name} ({sim * 100:.1f}% Match)")
+            else:
+                matches.append("UNRECOGNIZED SUSPECT")
+
+        recognized_names = [m for m in matches if "UNRECOGNIZED" not in m]
+        if recognized_names:
+            return {
+                "recognized": True,
+                "message": f"MATCH FOUND: {', '.join(recognized_names)}"
+            }
+        else:
+            return {
+                "recognized": False,
+                "message": "NO MATCH FOUND IN WATCHLIST (UNKNOWN SUSPECT)"
+            }
+    except Exception as e:
+        return {"recognized": False, "message": f"Face processing error: {str(e)}"}
+
 # 10. ON-DEMAND STREAM GENERATOR
 def create_no_signal_frame(camera_id: str, message="NO NETWORK / SIGNAL LOST"):
     frame = np.zeros((720, 1280, 3), dtype=np.uint8)
