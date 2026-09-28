@@ -527,7 +527,7 @@ const GarudaAdmin = {
           <td style="color: #94a3b8; font-size: 11px;">${timestampStr}</td>
           <td><span style="color: #4ade80;">${confPercent}%</span></td>
           <td>
-            <button type="button" class="btn-mini" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')" style="margin-right: 6px; cursor: pointer;">INSPECT</button>
+            <button type="button" class="btn-mini" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')" style="margin-right: 4px; cursor: pointer;">INSPECT</button>
             <button type="button" class="btn-mini btn-mini--danger" onclick="GarudaAdmin.deleteBreachImage('${inc.id}')" style="cursor: pointer;">DELETE</button>
           </td>
         `;
@@ -558,8 +558,7 @@ const GarudaAdmin = {
               <span style="color: #94a3b8;">${inc.camera_id}</span>
             </div>
             <strong style="color: #fff; font-size: 12px; margin-top: 4px;">${inc.identifier || 'UNKNOWN'}</strong>
-            <span style="color: #64748b; font-size: 10px;">${timestampStr} | CONF: ${(inc.confidence * 100).toFixed(0)}%</span>
-            <div class="vault-actions">
+            <div class="vault-actions" style="display: flex; gap: 4px; margin-top: 8px;">
               <button type="button" class="btn-mini" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; cursor: pointer;">INSPECT</button>
               <button type="button" class="btn-mini btn-mini--danger" onclick="GarudaAdmin.deleteBreachImage('${inc.id}')" style="background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #ef4444; cursor: pointer;">DELETE</button>
             </div>
@@ -577,8 +576,11 @@ const GarudaAdmin = {
     const titleEl = document.getElementById('modal-image-title');
     const metaEl = document.getElementById('modal-image-meta');
     const delBtn = document.getElementById('modal-delete-btn');
+    const faceBtn = document.getElementById('modal-face-btn');
+    const faceResult = document.getElementById('modal-face-result');
     if (!modal || !img) return;
 
+    if (faceResult) faceResult.style.display = 'none';
     img.src = imageData;
     if (titleEl) titleEl.textContent = title;
     if (metaEl) metaEl.textContent = `CAMERA: ${meta}`;
@@ -588,7 +590,57 @@ const GarudaAdmin = {
         modal.classList.remove('is-open');
       };
     }
+    if (faceBtn) {
+      faceBtn.onclick = () => this.identifyIncidentFace(incidentId, faceResult);
+    }
     modal.classList.add('is-open');
+  },
+
+  async identifyIncidentFace(incidentId, targetResultEl = null) {
+    GarudaToast.show('🔍 Analyzing evidence image for faces...', 'default');
+    if (targetResultEl) {
+      targetResultEl.style.display = 'block';
+      targetResultEl.style.background = 'rgba(234, 179, 8, 0.15)';
+      targetResultEl.style.border = '1px solid #eab308';
+      targetResultEl.style.color = '#fde047';
+      targetResultEl.textContent = '⏳ RUNNING FACE RECOGNITION...';
+    }
+
+    try {
+      const res = await fetch(`${GarudaConfig.API_BASE_URL}/incidents/${incidentId}/detect-face`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+
+      if (data.recognized) {
+        GarudaToast.show(data.message, 'success');
+        if (targetResultEl) {
+          targetResultEl.style.display = 'block';
+          targetResultEl.style.background = 'rgba(34, 197, 94, 0.15)';
+          targetResultEl.style.border = '1px solid #22c55e';
+          targetResultEl.style.color = '#4ade80';
+          targetResultEl.textContent = data.message;
+        }
+      } else {
+        GarudaToast.show(data.message, 'error');
+        if (targetResultEl) {
+          targetResultEl.style.display = 'block';
+          targetResultEl.style.background = 'rgba(239, 68, 68, 0.15)';
+          targetResultEl.style.border = '1px solid #ef4444';
+          targetResultEl.style.color = '#f87171';
+          targetResultEl.textContent = data.message;
+        }
+      }
+    } catch (err) {
+      GarudaToast.show(`Face recognition failed: ${err.message}`, 'error');
+      if (targetResultEl) {
+        targetResultEl.style.display = 'block';
+        targetResultEl.style.background = 'rgba(239, 68, 68, 0.15)';
+        targetResultEl.style.border = '1px solid #ef4444';
+        targetResultEl.style.color = '#f87171';
+        targetResultEl.textContent = `❌ ERROR: ${err.message}`;
+      }
+    }
   },
 
   async deleteBreachImage(incidentId) {
