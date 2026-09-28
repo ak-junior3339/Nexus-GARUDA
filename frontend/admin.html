@@ -447,11 +447,16 @@
       <div class="image-modal-body">
         <img id="modal-image-src" src="" alt="Breach Evidence Full View" />
       </div>
-      <div class="image-modal-footer">
-        <span id="modal-image-meta">CAMERA INFO</span>
-        <button type="button" class="btn-mini btn-mini--danger" id="modal-delete-btn" style="background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #ef4444; padding: 6px 14px; cursor: pointer; font-family: var(--font-mono);">DELETE RECORD FROM DATABASE</button>
+      <div class="image-modal-footer" style="display: flex; flex-direction: column; gap: 8px;">
+        <div id="modal-face-result" style="display: none; padding: 8px 12px; font-family: var(--font-mono); font-size: 12px; font-weight: bold; border-radius: 4px; text-align: center;"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <span id="modal-image-meta" style="color: #94a3b8; font-family: var(--font-mono); font-size: 11px;">CAMERA: CAM-01</span>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" id="modal-face-btn" class="btn-primary" style="background: #3b82f6; border: 1px solid #60a5fa; color: #fff; padding: 4px 10px; font-family: var(--font-mono); cursor: pointer;">🔍 IDENTIFY PERSON / FACE</button>
+            <button type="button" id="modal-delete-btn" class="btn-mini btn-mini--danger" style="padding: 4px 10px; font-family: var(--font-mono);">DELETE EVIDENCE</button>
+          </div>
+        </div>
       </div>
-    </div>
   </div>
 
     <!-- ============================= PROVISION CAMERA MODAL ============================= -->
