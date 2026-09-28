@@ -528,7 +528,6 @@ const GarudaAdmin = {
           <td><span style="color: #4ade80;">${confPercent}%</span></td>
           <td>
             <button type="button" class="btn-mini" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')" style="margin-right: 4px; cursor: pointer;">INSPECT</button>
-            <button type="button" class="btn-mini" onclick="GarudaAdmin.identifyIncidentFace('${inc.id}')" style="margin-right: 4px; background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #60a5fa; cursor: pointer;">🔍 DETECT FACE</button>
             <button type="button" class="btn-mini btn-mini--danger" onclick="GarudaAdmin.deleteBreachImage('${inc.id}')" style="cursor: pointer;">DELETE</button>
           </td>
         `;
@@ -561,7 +560,6 @@ const GarudaAdmin = {
             <strong style="color: #fff; font-size: 12px; margin-top: 4px;">${inc.identifier || 'UNKNOWN'}</strong>
             <div class="vault-actions" style="display: flex; gap: 4px; margin-top: 8px;">
               <button type="button" class="btn-mini" onclick="GarudaAdmin.inspectImage('${inc.id}', '${inc.image_data}', '${inc.entity_type} (${inc.identifier})', '${inc.camera_id} · ${timestampStr}')" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; cursor: pointer;">INSPECT</button>
-              <button type="button" class="btn-mini" onclick="GarudaAdmin.identifyIncidentFace('${inc.id}')" style="background: rgba(59,130,246,0.2); border: 1px solid #3b82f6; color: #60a5fa; cursor: pointer;">🔍 DETECT FACE</button>
               <button type="button" class="btn-mini btn-mini--danger" onclick="GarudaAdmin.deleteBreachImage('${inc.id}')" style="background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #ef4444; cursor: pointer;">DELETE</button>
             </div>
           </div>
