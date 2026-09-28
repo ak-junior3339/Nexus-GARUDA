@@ -1326,11 +1326,11 @@ const GarudaAdmin = {
         const tr = document.createElement('tr');
         tr.dataset.camId = cam.id;
         tr.innerHTML = `
-          <td style="padding: 10px 14px; font-weight: bold; color: #38bdf8;">${cam.id}</td>
+          <td style="padding: 10px 14px; font-weight: bold; color: #ffffff;">${cam.id}</td>
           <td style="padding: 10px 14px; color: #fff;">${cam.name}</td>
-          <td style="padding: 10px 14px;"><span style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;">${cam.camera_type || 'WATCHTOWER'}</span></td>
+          <td style="padding: 10px 14px;"><span style="color: #ffffff; padding: 2px 8px;  font-size: 10px; font-weight: bold;">${cam.camera_type || 'WATCHTOWER'}</span></td>
           <td style="padding: 10px 14px; color: #94a3b8; font-size: 11px;">${cam.coordinates || 'N/A'}</td>
-          <td style="padding: 10px 14px; color: #4ade80; font-size: 11px;">${cam.ai_features || 'DEFAULT'}</td>
+          <td style="padding: 10px 14px; color: #ffffff; font-size: 11px;">${cam.ai_features || 'DEFAULT'}</td>
           <td style="padding: 10px 14px;">
             <button type="button" class="btn-mini btn-mini--danger" data-cam-action="delete" style="cursor: pointer;">DECOMMISSION</button>
           </td>
