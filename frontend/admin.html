@@ -305,20 +305,22 @@
       <div class="admin-section__head" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
         <div>
           <h2 style="font-family: var(--font-mono); font-size: 16px; margin: 0; display: flex; align-items: center; gap: 8px;">
-            <span style="display: inline-block; width: 8px; height: 8px; background: #38bdf8; border-radius: 50%; box-shadow: 0 0 8px #38bdf8;"></span>
-            GEOSPATIAL TACTICAL SITUATION MAP (GIS)
+            <span style="display: inline-block; width: 8px; height: 8px; background: #000000; border-radius: 50%; box-shadow: 0 0 8px #0a0f1d;"></span>
+            GARUDA Intelligence Sanjay (GIS)
           </h2>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: #94a3b8;">ALL-CAMERA SURVEILLANCE GRID &amp; CLICK-TO-COORDINATE PINNING</span>
+          <h2 style="font-family: var(--font-mono); font-size: 16px; margin: 0; display: flex; gap: 8px;">
+            <span style="font-family: var(--font-mono); font-size: 11px; color: #ffffff;">Integrated Geospatial Intelligence Platform Engine</span>
+        </h2>
         </div>
         
         <!-- Geocoding Search & Action Controls -->
         <div style="display: flex; gap: 8px; align-items: center;">
           <div style="position: relative; display: flex; align-items: center;">
-            <input type="text" id="gis-search-input" placeholder="🔍 Geocode Base / Sector / Lat,Lng..." style="background: #04060c; border: 1px solid rgba(56, 189, 248, 0.4); color: #fff; padding: 6px 10px; font-family: var(--font-mono); font-size: 11px; border-radius: 3px; width: 250px;" onkeydown="if(event.key==='Enter') GarudaGISMap.searchGeocode();" />
-            <button type="button" onclick="GarudaGISMap.searchGeocode()" style="background: #0284c7; border: 1px solid #38bdf8; color: #fff; padding: 6px 10px; font-family: var(--font-mono); font-size: 10px; border-radius: 0 3px 3px 0; margin-left: -1px; cursor: pointer;">SEARCH</button>
+            <input type="text" id="gis-search-input" placeholder="Geocode Base / Sector / Lat,Lng..." style="background: #04060c; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 6px 10px; font-family: var(--font-mono); font-size: 11px; border-radius: 3px; width: 250px;" onkeydown="if(event.key==='Enter') GarudaGISMap.searchGeocode();" />
+            <button type="button" onclick="GarudaGISMap.searchGeocode()" style="background: #0a0f1d; border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 6px 10px; font-family: var(--font-mono); font-size: 10px; border-radius: 0 3px 3px 0; margin-left: -1px; cursor: pointer;">SEARCH</button>
           </div>
           <button type="button" onclick="GarudaGISMap.fitAllCameras()" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 6px 12px; font-family: var(--font-mono); font-size: 11px; border-radius: 3px; cursor: pointer;">
-            🎯 FIT ALL CAMERAS
+            FIT ALL CAMERAS
           </button>
         </div>
       </div>
@@ -326,8 +328,7 @@
       <div style="background: #0a0f1d; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; padding: 10px; box-shadow: 0 0 20px rgba(2, 132, 199, 0.1);">
         <div id="tactical-gis-map"></div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-family: var(--font-mono); font-size: 10px; color: #94a3b8;">
-          <span id="gis-click-status">💡 TIP: Click anywhere on the map to inspect coordinates or provision a new camera at that location.</span>
-          <span id="gis-coords-display" style="color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 2px 8px; border-radius: 3px; border: 1px solid rgba(56, 189, 248, 0.2);">COORDS: 28.6139°N, 77.2090°E</span>
+          <span id="gis-coords-display" style="color: #ffffff; background: rgba(56, 189, 248, 0.1); padding: 2px 8px; border-radius: 3px; border: 1px solid rgba(56, 189, 248, 0.2);">COORDS: 28.6139°N, 77.2090°E</span>
         </div>
       </div>
     </section>
@@ -337,8 +338,8 @@
         <h2 style="font-family: var(--font-mono); font-size: 16px;">OPERATOR &amp; SESSION CONTROL</h2>
         <div style="display: flex; gap: 10px; align-items: center;">
           <!-- EXPORT LOGS BUTTON -->
-          <button type="button" class="btn-primary" id="open-export-modal" style="background: #0284c7; color: #fff; border: 1px solid #38bdf8; padding: 6px 14px; font-family: var(--font-mono); cursor: pointer; display: flex; align-items: center; gap: 6px;">
-            📥 EXPORT SYSTEM LOGS
+          <button type="button" class="btn-primary" id="open-export-modal" style="background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 14px; font-family: var(--font-mono); cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            EXPORT SYSTEM LOGS
           </button>
 
           <!-- AUDIT BUTTON -->
