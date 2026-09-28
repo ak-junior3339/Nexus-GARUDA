@@ -198,14 +198,121 @@ const GarudaAuth = {
         session = { token: 'demo-token', role, userId, fullName: role === 'admin' ? 'SUPERADMIN' : 'OPERATOR' };
       }
 
-      GarudaAuthStore.setSession(session);
-      GarudaAuditStore.addLog(userId, 'USER LOGGED IN');
-      statusEl.textContent = 'ACCESS GRANTED. REDIRECTING…';
-      window.location.href = redirectTo;
+            GarudaAuthStore.setSession(session);
+      GarudaAuditStore.addLog(userId, 'PASSWORD & CAPTCHA VERIFIED');
+      
+      // TRIGGER STEP 2: FACIAL BIOMETRIC VERIFICATION MODAL
+      statusEl.textContent = 'CREDENTIALS VERIFIED. OPENING BIOMETRIC CAMERA…';
+      this.promptFaceVerification(session, redirectTo, statusEl, submitBtn);
+
     } catch (err) {
       statusEl.textContent = `ACCESS DENIED — ${err.message || 'Invalid credentials.'}`;
       submitBtn.disabled = false;
       this.loadCaptcha(prefix);
+    }
+  },
+
+  promptFaceVerification(session, redirectTo, statusEl, submitBtn) {
+    const modal = document.getElementById('face-login-modal');
+    const video = document.getElementById('face-login-video');
+    const verifyBtn = document.getElementById('verify-face-login-btn');
+    const cancelBtn = document.getElementById('cancel-face-login');
+    const faceStatus = document.getElementById('face-login-status');
+
+    if (!modal || !video) {
+      // Fallback if modal elements missing
+      window.location.href = redirectTo;
+      return;
+    }
+
+    modal.style.display = 'flex';
+    let stream = null;
+
+    navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+      .then((s) => {
+        stream = s;
+        video.srcObject = s;
+        if (faceStatus) {
+          faceStatus.style.display = 'block';
+          faceStatus.style.background = 'rgba(56, 189, 248, 0.1)';
+          faceStatus.style.color = '#38bdf8';
+          faceStatus.textContent = '📷 CAMERA ACTIVE. LOOK AT THE CAMERA & CLICK VERIFY.';
+        }
+      })
+      .catch((err) => {
+        if (faceStatus) {
+          faceStatus.style.display = 'block';
+          faceStatus.style.background = 'rgba(239, 68, 68, 0.15)';
+          faceStatus.style.color = '#f87171';
+          faceStatus.textContent = `⚠️ CAMERA ERROR: ${err.message}`;
+        }
+      });
+
+    const stopCamera = () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      modal.style.display = 'none';
+      submitBtn.disabled = false;
+    };
+
+    if (cancelBtn) cancelBtn.onclick = stopCamera;
+
+    if (verifyBtn) {
+      verifyBtn.onclick = async () => {
+        if (!stream) {
+          GarudaToast.show('Webcam stream not active!', 'error');
+          return;
+        }
+
+        const canvas = document.getElementById('face-login-canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const b64 = canvas.toDataURL('image/jpeg', 0.85);
+
+        if (faceStatus) {
+          faceStatus.style.display = 'block';
+          faceStatus.style.background = 'rgba(234, 179, 8, 0.15)';
+          faceStatus.style.color = '#fde047';
+          faceStatus.textContent = '⏳ VERIFYING FACE WITH EDGE DATABASE...';
+        }
+
+        try {
+          const res = await fetch(`${GarudaConfig.API_BASE_URL}/auth/verify-face`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_base64: b64 })
+          });
+          const data = await res.json();
+
+          if (data.verified) {
+            if (faceStatus) {
+              faceStatus.style.background = 'rgba(34, 197, 94, 0.15)';
+              faceStatus.style.color = '#4ade80';
+              faceStatus.textContent = data.message;
+            }
+            GarudaToast.show(data.message, 'success');
+            setTimeout(() => {
+              stopCamera();
+              window.location.href = redirectTo;
+            }, 800);
+          } else {
+            if (faceStatus) {
+              faceStatus.style.background = 'rgba(239, 68, 68, 0.15)';
+              faceStatus.style.color = '#f87171';
+              faceStatus.textContent = data.message;
+            }
+            GarudaToast.show(data.message, 'error');
+          }
+        } catch (err) {
+          if (faceStatus) {
+            faceStatus.style.color = '#f87171';
+            faceStatus.textContent = `Error: ${err.message}`;
+          }
+        }
+      };
     }
   },
 
