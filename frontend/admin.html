@@ -468,11 +468,11 @@
 
     <!-- ============================= PROVISION CAMERA MODAL ============================= -->
   <div class="modal-overlay" id="cam-provision-modal">
-    <div class="modal-card" style="background: #0a0f1d; border: 1px solid #0284c7; padding: 24px; max-width: 620px; width: 100%; border-radius: 6px; font-family: var(--font-mono); max-height: 90vh; overflow-y: auto;">
+    <div class="modal-card" style="background: #0a0f1d; padding: 24px; max-width: 620px; width: 100%; border-radius: 6px; font-family: var(--font-mono); max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
         <div>
-          <h3 style="color: #38bdf8; font-size: 15px; font-weight: bold; margin: 0; letter-spacing: 0.5px;">PROVISION TACTICAL CAMERA NODE</h3>
-          <span style="font-size: 11px; color: #94a3b8;">CONFIGURE REAL-TIME STREAM &amp; AI ANALYTICS HEAD</span>
+          <h3 style="color: #ffffff; font-size: 15px; font-weight: bold; margin: 0; letter-spacing: 0.5px;">PROVISION CAMERA NODE</h3>
+          <span style="font-size: 11px; color: #94a3b8;">CONFIGURE REAL-TIME STREAM &amp; CONFIGURE TRIPWIRE</span>
         </div>
         <button type="button" id="close-cam-provision-modal" style="background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; line-height: 1;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'">&times;</button>
       </div>
@@ -511,16 +511,16 @@
         </div>
 
         <!-- Plain Interactive Tripwire Calibration HUD with Live Frame -->
-        <div id="tripwire-config-box" style="background: rgba(4, 6, 13, 0.8); border: 1px solid #0284c7; border-radius: 6px; padding: 14px;">
+        <div id="tripwire-config-box" style="background: rgba(4, 6, 13, 0.8); border: 1px solid #04060c; border-radius: 6px; padding: 14px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="display: inline-block; width: 8px; height: 8px; background: #38bdf8; border-radius: 50%;"></span>
-              <label style="color: #38bdf8; font-size: 11px; font-weight: bold; font-family: var(--font-mono); letter-spacing: 0.5px;">VIRTUAL TRIPWIRE CALIBRATION</label>
+              <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%;"></span>
+              <label style="color: #ffffff; font-size: 11px; font-weight: bold; font-family: var(--font-mono); letter-spacing: 0.5px;">VIRTUAL TRIPWIRE CALIBRATION</label>
             </div>
             
             <div style="display: flex; gap: 8px; align-items: center;">
-              <button type="button" onclick="GarudaTripwireCalibrator.loadCurrentFrame()" style="background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #fff; padding: 4px 10px; font-family: var(--font-mono); font-size: 10px; border-radius: 3px; cursor: pointer;">
-                📸 GRAB VIDEO FRAME
+              <button type="button" onclick="GarudaTripwireCalibrator.loadCurrentFrame()" style="background: green; border: 1px solid green; color: #fff; padding: 4px 10px; font-family: var(--font-mono); font-size: 10px; border-radius: 3px; cursor: pointer;">
+                GRAB VIDEO FRAME
               </button>
             </div>
           </div>
@@ -549,7 +549,7 @@
           <!-- Coordinate Display -->
           <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
             <input type="text" id="new-cam-tripwire" placeholder="0, 650, 1920, 650" value="0, 650, 1920, 650" style="flex: 1; padding: 6px 10px; background: #04060c; border: 1px solid rgba(255,255,255,0.15); color: #4ade80; font-family: var(--font-mono); font-size: 11px; border-radius: 3px;" />
-            <button type="button" onclick="GarudaTripwireCalibrator.syncFromInput()" style="background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #fff; padding: 6px 12px; font-family: var(--font-mono); font-size: 10px; border-radius: 3px; cursor: pointer;">
+            <button type="button" onclick="GarudaTripwireCalibrator.syncFromInput()" style="background: green; border: 1px solid green; color: #fff; padding: 6px 12px; font-family: var(--font-mono); font-size: 10px; border-radius: 3px; cursor: pointer;">
               SYNC
             </button>
           </div>
@@ -569,8 +569,8 @@
         </div>
 
         <div style="display: flex; gap: 10px; margin-top: 10px;">
-          <button type="submit" class="btn-primary" style="flex: 1; padding: 10px; background: #0284c7; color: #fff; font-family: var(--font-mono); font-weight: bold; border: 1px solid #38bdf8; cursor: pointer; text-align: center; border-radius: 4px;">
-            ACTIVATE &amp; DEPLOY CAMERA NODE
+          <button type="submit" class="btn-primary" style="flex: 1; padding: 10px; background: green; color: #fff; font-family: var(--font-mono); font-weight: bold; border: 1px solid green; cursor: pointer; text-align: center; border-radius: 4px;">
+            ACTIVATE &amp; DEPLOY CAMERA 
           </button>
           <button type="button" id="cancel-cam-provision" style="padding: 10px 18px; background: rgba(255,255,255,0.08); color: #fff; font-family: var(--font-mono); border: 1px solid rgba(255,255,255,0.15); cursor: pointer; border-radius: 4px;">
             CANCEL
