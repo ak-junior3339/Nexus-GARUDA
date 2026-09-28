@@ -234,9 +234,9 @@ const GarudaAuth = {
         video.srcObject = s;
         if (faceStatus) {
           faceStatus.style.display = 'block';
-          faceStatus.style.background = 'rgba(56, 189, 248, 0.1)';
-          faceStatus.style.color = '#38bdf8';
-          faceStatus.textContent = '📷 CAMERA ACTIVE. LOOK AT THE CAMERA & CLICK VERIFY.';
+          faceStatus.style.background = 'rgba(0, 0, 0, 0)';
+          faceStatus.style.color = '#ffffff';
+          faceStatus.textContent = 'CAMERA ACTIVE. LOOK AT THE CAMERA & CLICK VERIFY.';
         }
       })
       .catch((err) => {
