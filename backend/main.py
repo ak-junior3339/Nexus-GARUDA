@@ -370,6 +370,52 @@ async def detect_incident_face(incident_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         return {"recognized": False, "message": f"Face processing error: {str(e)}"}
 
+# class FaceAuthPayload(BaseModel):
+#     image_base64: str
+
+# @app.post("/api/v1/auth/verify-face")
+# async def verify_login_face(payload: FaceAuthPayload):
+#     """Verifies a live user photo against known_faces.pkl during login."""
+#     try:
+#         header_data = payload.image_base64
+#         if "," in header_data:
+#             header_data = header_data.split(",")[1]
+#         img_bytes = base64.b64decode(header_data)
+#         nparr = np.frombuffer(img_bytes, np.uint8)
+#         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+#         if frame is None:
+#             raise HTTPException(status_code=400, detail="Invalid camera frame")
+
+#         from load_model import get_app
+#         from match import load_known_faces, identify
+
+#         app_face = get_app()
+#         known_faces_path = os.path.join(BASE_DIR, "face_detection", "known_faces.pkl")
+#         known_faces = load_known_faces(known_faces_path) if os.path.exists(known_faces_path) else {}
+
+#         faces = app_face.get(frame)
+#         if not faces or len(faces) == 0:
+#             return {"verified": False, "message": "❌ NO FACE DETECTED! Align face in camera."}
+
+#         face = faces[0]
+#         name, sim = identify(face.embedding, known_faces, threshold=0.45)
+
+#         if name != "Unknown":
+#             return {
+#                 "verified": True,
+#                 "person_name": name,
+#                 "similarity": f"{sim * 100:.1f}%",
+#                 "message": f"✅ BIOMETRIC VERIFIED: WELCOME {name.upper()}"
+#             }
+#         else:
+#             return {
+#                 "verified": False,
+#                 "message": "❌ UNRECOGNIZED FACE! Access Denied."
+#             }
+#     except Exception as e:
+#         return {"verified": False, "message": f"Face verification error: {str(e)}"}
+
 # 10. ON-DEMAND STREAM GENERATOR
 def create_no_signal_frame(camera_id: str, message="NO NETWORK / SIGNAL LOST"):
     frame = np.zeros((720, 1280, 3), dtype=np.uint8)
