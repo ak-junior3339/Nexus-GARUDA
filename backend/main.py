@@ -626,5 +626,24 @@ async def stop_all_streams():
         stopped.append(cam_id)
     print(f"🔴 [KILL ALL] Stopped streams: {stopped}")
     return {"status": "all_stopped", "stopped": stopped}
+
+from fastapi.responses import Response
+
+@app.get("/api/v1/admin/logs/export")
+def export_logs_csv(db: Session = Depends(get_db)):
+    """Exports all unresolved breach incidents and camera logs as a downloadable CSV."""
+    incidents = crud.get_unresolved_incidents(db)
+    
+    csv_lines = ["ID,Timestamp,Camera Sector,Threat Category,Identifier,Confidence"]
+    for inc in incidents:
+        time_str = inc.timestamp.strftime("%Y-%m-%d %H:%M:%S") if inc.timestamp else ""
+        csv_lines.append(f'"{inc.id}","{time_str}","{inc.camera_id}","{inc.entity_type}","{inc.identifier or "UNKNOWN"}","{inc.confidence}"')
+    
+    csv_content = "\n".join(csv_lines)
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=GARUDA_INCIDENTS_LOG.csv"}
+    )
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["backend"])
