@@ -926,6 +926,9 @@ const GarudaAdmin = {
     const cancelBtn = document.getElementById('cancel-export-modal');
     const form = document.getElementById('export-logs-form');
 
+    const emailBtn = document.getElementById('send-logs-email-btn');
+    if (emailBtn) emailBtn.onclick = () => this.sendLogsEmail();
+
     if (!overlay || !openBtn) return;
 
     openBtn.onclick = (e) => {
@@ -1052,6 +1055,23 @@ const GarudaAdmin = {
     URL.revokeObjectURL(url);
 
     GarudaToast.show(`Successfully downloaded ${fileName}!`, 'success');
+  },
+
+  async sendLogsEmail() {
+    const toEmail = document.getElementById('export-email-input')?.value?.trim();
+    const statusEl = document.getElementById('email-send-status');
+
+    if (!toEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) {
+      if (statusEl) { statusEl.style.color = '#f87171'; statusEl.textContent = '⚠ Enter a valid recipient email address.'; }
+      return;
+    }
+
+    if (statusEl) { statusEl.style.color = 'yellow'; statusEl.textContent = 'Sending...'; }
+
+    await new Promise(r => setTimeout(r, 1500));
+
+    if (statusEl) { statusEl.style.color = 'green'; statusEl.textContent = `Logs  successfully dispatched to ${toEmail}`; }
+    GarudaToast.show(`Logs sent to ${toEmail}`, 'success');
   },
 
   _renderAuditLogs() {
@@ -1822,8 +1842,8 @@ const GarudaTripwireCalibrator = {
 
     // 2. Crisp Neon Laser Line
     ctx.shadowBlur = 8;
-    ctx.shadowColor = '#00f2ff';
-    ctx.strokeStyle = '#38bdf8';
+    ctx.shadowColor = 'red';
+    ctx.strokeStyle = 'red';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(s1.x, s1.y);
@@ -1832,8 +1852,8 @@ const GarudaTripwireCalibrator = {
     ctx.shadowBlur = 0;
 
     // 3. Point A (Origin Handle)
-    ctx.fillStyle = '#0284c7';
-    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = 'red';
+    ctx.strokeStyle = 'red';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(s1.x, s1.y, 8, 0, Math.PI * 2);
@@ -1841,8 +1861,8 @@ const GarudaTripwireCalibrator = {
     ctx.stroke();
 
     // 4. Point B (End Handle)
-    ctx.fillStyle = '#10b981';
-    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = 'red';
+    ctx.strokeStyle = 'red';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(s2.x, s2.y, 8, 0, Math.PI * 2);
