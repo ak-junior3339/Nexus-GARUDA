@@ -615,7 +615,7 @@
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
         <div>
           <h3 style="color: #ffffff; font-size: 15px; font-weight: bold; margin: 0;">EXPORT SYSTEM LOGS</h3>
-          <span style="font-size: 11px; color: #94a3b8;">SELECT LOG DATASETS TO DOWNLOAD IN CSV FORMAT</span>
+          <span style="font-size: 15px; color: #94a3b8;">SELECT LOG DATASETS TO DOWNLOAD IN CSV FORMAT</span>
         </div>
         <button type="button" id="close-export-modal" style="background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; line-height: 1;">&times;</button>
       </div>
@@ -625,7 +625,7 @@
         <!-- Selection Checklist -->
         <div>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <label style="color: #cbd5e1; font-size: 11px; font-weight: bold; letter-spacing: 0.5px;">1. SELECT LOG CATEGORIES TO EXPORT:</label>
+            <label style="color: #cbd5e1; font-size: 15px; font-weight: bold; letter-spacing: 0.5px;">1. SELECT LOG CATEGORIES TO EXPORT:</label>
             <div style="display: flex; gap: 8px;">
               <button type="button" onclick="GarudaAdmin.toggleExportCheckboxes(true)" style="background: none; border: none; color: #94a3b8; font-family: var(--font-mono); font-size: 10px; cursor: pointer; text-decoration: underline;">SELECT ALL</button>
               <button type="button" onclick="GarudaAdmin.toggleExportCheckboxes(false)" style="background: none; border: none; color: #94a3b8; font-family: var(--font-mono); font-size: 10px; cursor: pointer; text-decoration: underline;">CLEAR</button>
@@ -633,22 +633,22 @@
           </div>
 
           <div style="display: flex; flex-direction: column; gap: 8px; background: #04060c; border: 1px solid rgba(255,255,255,0.1); padding: 12px; border-radius: 4px;">
-            <label style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #e2e8f0; cursor: pointer;">
+            <label style="display: flex; align-items: center; gap: 10px; font-size: 15px; color: #e2e8f0; cursor: pointer;">
               <input type="checkbox" id="export-chk-incidents" checked style="accent-color: #0284c7; width: 15px; height: 15px;" />
               <span><strong>ANPR &amp; Watchtower Breach Logs</strong> (Vehicle Plates, Intrusion Alerts, Timestamps)</span>
             </label>
 
-            <label style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #e2e8f0; cursor: pointer;">
+            <label style="display: flex; align-items: center; gap: 10px; font-size: 15px; color: #e2e8f0; cursor: pointer;">
               <input type="checkbox" id="export-chk-audit" checked style="accent-color: #0284c7; width: 15px; height: 15px;" />
               <span><strong>Admin &amp; Operator Audit Logs</strong> (Logins, CAPTCHA, Biometric &amp; Config changes)</span>
             </label>
 
-            <label style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #e2e8f0; cursor: pointer;">
+            <label style="display: flex; align-items: center; gap: 10px; font-size: 15px; color: #e2e8f0; cursor: pointer;">
               <input type="checkbox" id="export-chk-cameras" checked style="accent-color: #0284c7; width: 15px; height: 15px;" />
               <span><strong>Tactical Camera Node Config Logs</strong> (RTSP sources, Coordinates, Tripwires)</span>
             </label>
 
-            <label style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #e2e8f0; cursor: pointer;">
+            <label style="display: flex; align-items: center; gap: 10px; font-size: 15px; color: #e2e8f0; cursor: pointer;">
               <input type="checkbox" id="export-chk-operators" checked style="accent-color: #0284c7; width: 15px; height: 15px;" />
               <span><strong>Operator &amp; Clearance Roster Logs</strong> (User IDs, Roles, Online Statuses)</span>
             </label>
@@ -657,7 +657,7 @@
 
         <!-- Export Format Selection -->
         <div>
-          <label style="color: #cbd5e1; font-size: 11px; font-weight: bold; display: block; margin-bottom: 6px;">2. CHOOSE EXPORT FORMAT:</label>
+          <label style="color: #cbd5e1; font-size: 15px; font-weight: bold; display: block; margin-bottom: 6px;">2. CHOOSE EXPORT FORMAT:</label>
           <select id="export-format-select" style="width: 100%; padding: 8px; background: #04060c; border: 1px solid rgba(56, 189, 248, 0.3); color: #ffffff; font-family: var(--font-mono); font-size: 12px; border-radius: 4px;">
             <option value="csv" selected>CSV (Comma Separated Values - Excel / Sheets)</option>
             <option value="json">JSON (JavaScript Object Notation)</option>
@@ -672,6 +672,17 @@
           <button type="button" id="cancel-export-modal" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.08); color: #fff; font-family: var(--font-mono); border: 1px solid rgba(255,255,255,0.15); cursor: pointer; border-radius: 4px;">
             CANCEL
           </button>
+        </div>
+        <!-- Email Dispatch Section -->
+        <div style="margin-top: 14px; border-top: 1px solid rgba(56,189,248,0.15); padding-top: 12px;">
+          <label style="color: #cbd5e1; font-size: 15px; font-weight: bold; display: block; margin-bottom: 6px;">3. DISPATCH LOGS VIA SECURE EMAIL:</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="email" id="export-email-input" placeholder="recipient@domain.gov.in" style="flex: 1; padding: 9px 10px; background: #04060c; border: 1px solid rgba(56,189,248,0.3); color: #ffffff; font-family: var(--font-mono); font-size: 15px; border-radius: 4px; outline: none;" />
+            <button type="button" id="send-logs-email-btn" style="padding: 9px 14px; background: green; color: white; font-family: var(--font-mono); font-weight: bold; font-size: 15px; border: 1px solid rgba(56,189,248,0.4); cursor: pointer; border-radius: 4px; white-space: nowrap;">
+              SEND EMAIL
+            </button>
+          </div>
+          <p id="email-send-status" style="margin-top: 6px; font-size: 17px; color: #64748b; font-family: var(--font-mono); min-height: 16px;"></p>
         </div>
       </form>
 
